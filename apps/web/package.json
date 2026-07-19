@@ -1,0 +1,14 @@
+{
+  "name": "@budget/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo \"web dev — заполняется в Фазе 3\" && exit 0",
+    "build": "echo \"web build — заполняется в Фазе 3\" && exit 0",
+    "typecheck": "echo \"web typecheck — заполняется в Фазе 3\" && exit 0"
+  },
+  "dependencies": {
+    "@budget/shared": "*"
+  }
+}
