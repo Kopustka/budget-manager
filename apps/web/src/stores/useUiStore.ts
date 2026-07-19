@@ -27,9 +27,10 @@ export const useUiStore = create<UiState>((set) => ({
 
   notify: (message, tone = 'info') => {
     const id = ++toastId;
-    set((s) => ({ toasts: [...s.toasts, { id, message, tone }] }));
-    // Тост живёт 4 секунды — достаточно, чтобы прочитать, и не мешает работе.
-    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 4000);
+    // Показываем один тост за раз: стопка перекрывала баланс в шапке.
+    set({ toasts: [{ id, message, tone }] });
+    // 3 секунды — успеть прочитать, но не мешать следующему действию.
+    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 3000);
   },
 
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

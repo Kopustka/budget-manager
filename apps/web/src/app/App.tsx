@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useBudgetStore } from '@/stores/useBudgetStore';
 import { Toaster } from '@/shared/ui/Toaster';
 import { HomeScreen } from './screens/HomeScreen';
+import { DndMatrixProvider } from '@/features/dnd-matrix/DndMatrixProvider';
 
 export function App() {
   const load = useBudgetStore((s) => s.load);
@@ -14,7 +15,9 @@ export function App() {
   return (
     <div className="min-h-full text-ink">
       <Toaster />
-      <HomeScreen />
+      <DndMatrixProvider>
+        <HomeScreen />
+      </DndMatrixProvider>
     </div>
   );
 }

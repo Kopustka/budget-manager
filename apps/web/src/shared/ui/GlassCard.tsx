@@ -27,8 +27,11 @@ export function GlassCard({
   const base = cn(
     'glass rounded-[var(--radius-card)] p-4',
     'transition-[background-color,border-color,box-shadow,transform] duration-[var(--duration-base)] ease-[var(--ease-ios)]',
-    danger && 'border-danger/60 bg-danger/12 shadow-[0_0_24px_-6px_var(--color-danger)]',
-    highlighted && !danger && 'border-brand/70 shadow-[0_0_24px_-6px_var(--color-brand)]',
+    danger &&
+      '[--glass-border:var(--color-danger)] bg-danger/12 shadow-[0_0_28px_-4px_var(--color-danger)]',
+    highlighted &&
+      !danger &&
+      '[--glass-border:var(--color-brand)] bg-brand/10 shadow-[0_0_28px_-4px_var(--color-brand)]',
     className,
   );
 

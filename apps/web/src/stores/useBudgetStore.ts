@@ -17,13 +17,20 @@ interface BudgetState {
   error: string | null;
 
   load: () => Promise<void>;
-  applyDndResult: (result: {
-    transaction: Transaction;
-    walletBalance: number;
-    categorySpent: number;
-    categoryLimit: number | null;
-    isOverdraft: boolean;
-  }) => void;
+  applyDndResult: (result: DndPatch) => void;
+  applyEditResult: (result: DndPatch) => void;
+  /** Удаление: транзакция уходит из ленты, баланс приходит из ответа,
+   *  а spent категории пересчитывает бэкенд — поэтому дотягиваем справочники. */
+  applyRemoval: (transactionId: string, walletBalance: number) => Promise<void>;
+}
+
+/** Общая форма ответа DnD-ядра — им же отвечает и правка транзакции. */
+interface DndPatch {
+  transaction: Transaction;
+  walletBalance: number;
+  categorySpent: number;
+  categoryLimit: number | null;
+  isOverdraft: boolean;
 }
 
 export const useBudgetStore = create<BudgetState>((set) => ({
@@ -62,5 +69,36 @@ export const useBudgetStore = create<BudgetState>((set) => ({
       ),
       transactions: [transaction, ...state.transactions],
     }));
+  },
+
+  applyEditResult({ transaction, walletBalance, categorySpent, categoryLimit, isOverdraft }) {
+    set((state) => ({
+      wallets: state.wallets.map((w) =>
+        w.id === transaction.walletId ? { ...w, balance: walletBalance } : w,
+      ),
+      categories: state.categories.map((c) =>
+        c.id === transaction.categoryId && c.kind === 'expense'
+          ? { ...c, spent: categorySpent, limit: categoryLimit, isOverdraft }
+          : c,
+      ),
+      // Правка может сменить категорию, поэтому заменяем запись целиком.
+      transactions: state.transactions.map((t) => (t.id === transaction.id ? transaction : t)),
+    }));
+  },
+
+  async applyRemoval(transactionId, walletBalance) {
+    const removed = useBudgetStore.getState().transactions.find((t) => t.id === transactionId);
+    set((state) => ({
+      transactions: state.transactions.filter((t) => t.id !== transactionId),
+      wallets: state.wallets.map((w) =>
+        removed && w.id === removed.walletId ? { ...w, balance: walletBalance } : w,
+      ),
+    }));
+    // Точный spent знает только бэкенд — обновляем категории отдельным запросом.
+    try {
+      set({ categories: await categoryApi.list() });
+    } catch {
+      // Молча: баланс и лента уже верны, статистика подтянется при следующей загрузке.
+    }
   },
 }));
