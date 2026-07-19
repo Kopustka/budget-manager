@@ -32,7 +32,12 @@ function check(name: string, ok: boolean, detail?: unknown): void {
 
 async function reset(userId: string): Promise<void> {
   await pool.query('DELETE FROM transactions WHERE user_id = $1', [userId]);
-  await pool.query('UPDATE wallets SET balance = 100000000 WHERE user_id = $1', [userId]);
+  // Валюту кошельков возвращаем вместе с балансом: пересчёт меняет и её, иначе
+  // после прогона у пользователя-RUB остаются кошельки в USD.
+  await pool.query(
+    "UPDATE wallets SET balance = 100000000, currency = 'RUB' WHERE user_id = $1",
+    [userId],
+  );
   await pool.query("UPDATE users SET month_start_day = 1, currency = 'RUB' WHERE id = $1", [userId]);
   const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${userId}:*`);
   if (keys.length > 0) await redis.del(...keys);

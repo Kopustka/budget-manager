@@ -79,7 +79,9 @@ await page.waitForTimeout(800);
 
 console.log('\n[1] Загрузка экрана');
 check('баланс отрисован', /\d/.test(await balance()));
-check('карусель времени на месте', (await page.getByRole('button', { name: /расход|^\d+ / }).count()) > 0);
+// Календарь уехал в шторку записи: на главной его быть не должно.
+check('календаря на главной нет', (await page.getByRole('button', { name: /^\d+ [а-я]{2}/ }).count()) === 0);
+check('кнопка записи операции на месте', (await page.getByRole('button', { name: 'Записать операцию' }).count()) === 1);
 
 console.log('\n[2] Запрещённый жест: Доход → Расход');
 const income = page.locator('[aria-label^="Доход:"]').first();
@@ -163,10 +165,13 @@ check('деньги вернулись (+200)', Number(balanceAfterDelete) === N
   after: balanceAfterDelete,
 });
 
-console.log('\n[7] Быстрое добавление за прошлый день');
-await page.getByRole('button', { name: 'Добавить операцию за выбранный день' }).click();
+console.log('\n[7] Быстрое добавление: календарь внутри шторки');
+await page.getByRole('button', { name: 'Записать операцию' }).click();
 await page.waitForTimeout(400);
 check('открылась шторка выбора категории', (await page.getByRole('dialog').count()) === 1);
+// Календарь теперь здесь — иначе записать задним числом было бы нечем.
+const dayButtons = page.getByRole('dialog').getByRole('button', { name: /^\d+ [а-я]{2}/ });
+check('в шторке есть выбор даты', (await dayButtons.count()) > 0, await dayButtons.count());
 await page.screenshot({ path: '/tmp/e2e-5-quickadd.png' });
 await page.getByRole('dialog').getByRole('button', { name: 'Кафе' }).click();
 await page.waitForTimeout(400);

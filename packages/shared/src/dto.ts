@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CATEGORY_COLORS, CATEGORY_ICONS } from './catalog.js';
 import { CURRENCY_CODES, MAX_MONTH_START_DAY, MIN_MONTH_START_DAY } from './currency.js';
 import type { TransactionType } from './types.js';
 
@@ -31,6 +32,23 @@ export const editTransactionSchema = z.object({
   categoryId: z.string().uuid().optional(),
 });
 export type EditTransactionInput = z.infer<typeof editTransactionSchema>;
+
+/** POST /api/wallets — новый кошелёк */
+export const createWalletSchema = z.object({
+  name: z.string().trim().min(1, 'Введите название').max(40, 'Слишком длинное название'),
+  /** Стартовый баланс в минорных единицах: обычно то, что уже лежит в кармане. */
+  balance: z.number().int().nonnegative().max(1_000_000_000_00).default(0),
+});
+export type CreateWalletInput = z.infer<typeof createWalletSchema>;
+
+/** POST /api/categories — новая категория расхода или источник дохода */
+export const createCategorySchema = z.object({
+  name: z.string().trim().min(1, 'Введите название').max(40, 'Слишком длинное название'),
+  kind: z.enum(['income', 'expense']),
+  icon: z.enum(CATEGORY_ICONS as unknown as [string, ...string[]]).optional(),
+  color: z.enum(CATEGORY_COLORS as unknown as [string, ...string[]]).optional(),
+});
+export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 
 /** PUT /api/categories/:id/limit — установка лимита на период */
 export const setLimitSchema = z.object({

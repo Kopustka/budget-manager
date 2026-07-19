@@ -4,6 +4,7 @@ import type { HistoryTotals, Transaction, TransactionType } from '@budget/shared
 import { transactionApi } from '@/entities/transaction/api';
 import { useBudgetStore } from '@/stores/useBudgetStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
+import { useUiStore } from '@/stores/useUiStore';
 import { GlassCard } from '@/shared/ui/GlassCard';
 import { Money } from '@/shared/ui/Money';
 import { Skeleton } from '@/shared/ui/Skeleton';
@@ -24,10 +25,23 @@ export function HistoryScreen() {
   const { categories, load } = useBudgetStore();
   const { periodStart, periodEnd, monthStartDay } = useSettingsStore();
 
+  const historyFilter = useUiStore((s) => s.historyFilter);
+  const setHistoryFilter = useUiStore((s) => s.setHistoryFilter);
+
   const [offset, setOffset] = useState(0);
   const [type, setType] = useState<TransactionType | 'all'>('all');
-  const [categoryId, setCategoryId] = useState<string | 'all'>('all');
+  // Пресет из шторки категории: экран открывается уже отфильтрованным.
+  const [categoryId, setCategoryId] = useState<string | 'all'>(historyFilter?.categoryId ?? 'all');
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    if (!historyFilter) return;
+    setCategoryId(historyFilter.categoryId);
+    setShowFilters(true);
+    // Сбрасываем сразу: пресет одноразовый, иначе он вернётся при следующем
+    // заходе на вкладку и пользователь не поймёт, почему список урезан.
+    setHistoryFilter(null);
+  }, [historyFilter, setHistoryFilter]);
 
   const [items, setItems] = useState<Transaction[]>([]);
   const [totals, setTotals] = useState<HistoryTotals | null>(null);

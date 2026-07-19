@@ -11,6 +11,8 @@ import { useDndStore } from '@/stores/useDndStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { haptics } from '@/shared/lib/telegram';
 import { formatRelativeDay } from '@/shared/lib/format';
+import { DayPicker } from '@/features/day-picker/DayPicker';
+import { occurredAtFor } from '@/features/dnd-matrix/DndMatrixProvider';
 import { AmountField, parseAmount } from './AmountField';
 
 /**
@@ -21,14 +23,16 @@ import { AmountField, parseAmount } from './AmountField';
 export function OperationSheet() {
   const pending = useDndStore((s) => s.pending);
   const closeOperation = useDndStore((s) => s.closeOperation);
-  const { wallets, categories, applyDndResult } = useBudgetStore();
+  const { wallets, categories, transactions, applyDndResult } = useBudgetStore();
   const notify = useUiStore((s) => s.notify);
+  const selectedDay = useUiStore((s) => s.selectedDay);
 
   const [amount, setAmount] = useState('');
   const [subcategory, setSubcategory] = useState('');
   const [comment, setComment] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showDays, setShowDays] = useState(false);
 
   if (!pending) return null;
 
@@ -41,6 +45,7 @@ export function OperationSheet() {
     setSubcategory('');
     setComment('');
     setError(null);
+    setShowDays(false);
     closeOperation();
   }
 
@@ -64,7 +69,9 @@ export function OperationSheet() {
         amount: minor,
         subcategory: subcategory.trim() || null,
         comment: comment.trim() || null,
-        occurredAt: pending.occurredAt,
+        // Дату берём из выбранной, а не из зафиксированной при жесте: её могли
+        // поменять уже внутри шторки.
+        occurredAt: occurredAtFor(selectedDay),
       });
 
       applyDndResult(result);
@@ -124,14 +131,35 @@ export function OperationSheet() {
         </span>
       </div>
 
-      <p className="pb-3 text-xs text-ink-faint">
-        Дата: {formatRelativeDay(pending.occurredAt)}
-        {wallet ? (
-          <>
-            {' · '}Баланс: <Money value={wallet.balance} className="text-ink-muted" />
-          </>
-        ) : null}
-      </p>
+      {/* Дату можно поправить прямо здесь: жест всегда делается «сегодня»,
+          а записать трату задним числом хочется без повторного захода */}
+      <div className="flex items-center justify-between gap-2 pb-2 text-xs text-ink-faint">
+        <span>
+          Дата: {formatRelativeDay(occurredAtFor(selectedDay))}
+          {wallet ? (
+            <>
+              {' · '}Баланс: <Money value={wallet.balance} className="text-ink-muted" />
+            </>
+          ) : null}
+        </span>
+        <button
+          type="button"
+          aria-expanded={showDays}
+          onClick={() => {
+            haptics.selection();
+            setShowDays((v) => !v);
+          }}
+          className="min-h-11 shrink-0 px-2 text-sm text-brand"
+        >
+          {showDays ? 'Свернуть' : 'Другой день'}
+        </button>
+      </div>
+
+      {showDays && (
+        <div className="pb-3">
+          <DayPicker transactions={transactions} />
+        </div>
+      )}
 
       <AmountField value={amount} onChange={setAmount} autoFocus error={error} />
 

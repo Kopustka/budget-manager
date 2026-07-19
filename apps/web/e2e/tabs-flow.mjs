@@ -112,7 +112,73 @@ await page.getByRole('button', { name: 'Все', exact: true }).click();
 await page.waitForTimeout(700);
 await page.screenshot({ path: '/tmp/e2e-history.png', fullPage: true });
 
-console.log('\n[5] Настройки: день начала месяца');
+console.log('\n[5] Создание кошелька и категории');
+await nav('Главная').click();
+await page.waitForTimeout(900);
+// Имя со штампом времени: прогон не должен спотыкаться о свои же прошлые запуски.
+const stamp = String(await page.evaluate(() => Date.now())).slice(-6);
+const walletName = `e2e Кошелёк ${stamp}`;
+await page.locator('main').getByRole('button', { name: 'Кошелёк', exact: true }).click();
+await page.waitForTimeout(300);
+const walletSheet = page.getByRole('dialog');
+check('шторка создания кошелька открылась', (await walletSheet.count()) === 1);
+await walletSheet.getByPlaceholder('например, Карта').fill(walletName);
+await walletSheet.getByLabel('Сумма').fill('300');
+await walletSheet.getByRole('button', { name: 'Создать' }).click();
+await page.waitForTimeout(1200);
+check('кошелёк появился на главной', (await page.getByText(walletName).count()) > 0);
+check(
+  'стартовый баланс учтён',
+  (await page.locator('main').getByText('300 ₽').count()) > 0,
+);
+
+const categoryName = `e2e Спорт ${stamp}`;
+await page.locator('main').getByRole('button', { name: 'Категория расхода' }).click();
+await page.waitForTimeout(300);
+const catSheet = page.getByRole('dialog');
+await catSheet.getByPlaceholder('например, Спорт').fill(categoryName);
+await catSheet.getByRole('button', { name: 'Иконка dumbbell' }).click();
+await catSheet.getByRole('button', { name: 'Создать' }).click();
+await page.waitForTimeout(1200);
+check('категория появилась в матрице', (await page.getByText(categoryName).count()) > 0);
+
+// Дубликат имени должен получить внятный отказ, а не молча создаться вторым.
+await page.locator('main').getByRole('button', { name: 'Категория расхода' }).click();
+await page.waitForTimeout(300);
+const dupSheet = page.getByRole('dialog');
+await dupSheet.getByPlaceholder('например, Спорт').fill(categoryName);
+await dupSheet.getByRole('button', { name: 'Создать' }).click();
+await page.waitForTimeout(1000);
+check(
+  'дубликат объяснён пользователю',
+  (await dupSheet.getByText(/уже есть/).count()) === 1,
+  await dupSheet.innerText().catch(() => ''),
+);
+await dupSheet.getByRole('button', { name: 'Закрыть' }).click();
+await page.waitForTimeout(400);
+
+console.log('\n[6] История по категории');
+await page.getByRole('button', { name: /^Категория Кафе/ }).click();
+await page.waitForTimeout(1200);
+const catDetails = page.getByRole('dialog');
+check('шторка категории открылась', (await catDetails.count()) === 1);
+check(
+  'показана история именно этой категории',
+  (await catDetails.getByText('Операции по категории').count()) === 1,
+);
+check(
+  'есть переход во всю историю категории',
+  (await catDetails.getByRole('button', { name: /вся история/i }).count()) === 1,
+);
+await catDetails.getByRole('button', { name: /вся история/i }).click();
+await page.waitForTimeout(1200);
+check(
+  'история открылась с фильтром по категории',
+  (await page.getByRole('button', { name: /Фильтры/ }).innerText()).includes('Кафе'),
+  await page.getByRole('button', { name: /Фильтры/ }).innerText(),
+);
+
+console.log('\n[7] Настройки: день начала месяца');
 await nav('Настройки').click();
 await page.waitForTimeout(900);
 check('экран настроек открылся',
@@ -126,7 +192,7 @@ const periodHint = await page.locator('main').getByText(/Текущий пери
 check('подсказка показывает новые границы', /Текущий период: 2 /.test(periodHint), periodHint);
 await page.screenshot({ path: '/tmp/e2e-settings.png', fullPage: true });
 
-console.log('\n[6] Сдвинутый период доезжает до других экранов');
+console.log('\n[8] Сдвинутый период доезжает до других экранов');
 await nav('Главная').click();
 await page.waitForTimeout(900);
 const homeLabel = await page.locator('header p.text-xs').first().innerText();
@@ -139,7 +205,10 @@ await dayButton(1).click();
 await page.waitForTimeout(1200);
 check('день начала возвращён на 1', (await dayButton(1).getAttribute('aria-pressed')) === 'true');
 
-const unexpected = errors.filter((e) => !e.includes('net::ERR_FAILED'));
+// 409 — наш же тест дубликата имени: ожидаемый ответ, а не сбой страницы.
+const unexpected = errors.filter(
+  (e) => !e.includes('net::ERR_FAILED') && !e.includes('409 (Conflict)'),
+);
 console.log('\nconsole errors:', unexpected.length ? unexpected : 'none');
 const failed = results.filter((r) => !r.ok).length;
 console.log(failed === 0 ? '\n🎉 Все проверки пройдены' : `\n💥 Провалено: ${failed}`);
