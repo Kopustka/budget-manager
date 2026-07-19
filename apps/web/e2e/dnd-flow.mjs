@@ -176,6 +176,30 @@ check('операция создана', Number(await balance()) === Number(bala
   after: await balance(),
 });
 
+
+console.log('\n[8] Аналитика');
+await page.getByRole('button', { name: 'Аналитика' }).click();
+await page.waitForTimeout(1200);
+const donut = page.locator('svg[role="img"]').first();
+check('донат отрисован', (await donut.count()) === 1);
+// Цвет обязан быть уникальным на сегмент: цикличная палитра красила разные категории одинаково.
+const strokes = await donut.locator('circle').evaluateAll((nodes) =>
+  nodes.map((n) => getComputedStyle(n).stroke),
+);
+check('цвета сегментов не повторяются', new Set(strokes).size === strokes.length, strokes);
+check('сегментов не больше шести', strokes.length <= 6, strokes.length);
+await page.getByRole('button', { name: 'Таблицей' }).click();
+await page.waitForTimeout(300);
+check('табличный режим доступен', (await page.locator('table').count()) === 1);
+await page.getByRole('button', { name: 'Таблицей' }).click();
+await page.waitForTimeout(200);
+const velocity = page.locator('svg[role="img"]').last();
+await velocity.scrollIntoViewIfNeeded();
+check(
+  'velocity подписан для скринридера',
+  (await velocity.getAttribute('aria-label'))?.includes('Скорость трат') ?? false,
+);
+
 await page.screenshot({ path: '/tmp/e2e-6-final.png', fullPage: true });
 
 // ERR_FAILED — это наш же заблокированный запрос к telegram.org, он ожидаем.
