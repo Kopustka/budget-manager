@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/db/migrate.ts",
-    "seed": "tsx src/db/seed.ts"
+    "seed": "tsx src/db/seed.ts",
+    "smoke": "tsx src/scripts/smoke-dnd.ts"
   },
   "dependencies": {
     "@budget/shared": "*",
