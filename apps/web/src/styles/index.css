@@ -1,0 +1,152 @@
+@import 'tailwindcss';
+
+/**
+ * Дизайн-токены. Все цвета — семантические: компоненты не знают про хексы,
+ * поэтому тему можно менять в одном месте (правило token-driven theming).
+ * База — тёмный OLED-фон из PRD, акценты iOS-blue и neon-red.
+ */
+@theme {
+  /* Поверхности */
+  --color-canvas: #0d0e12;
+  --color-surface: #14161d;
+  --color-elevated: #1b1e27;
+  --color-scrim: rgb(0 0 0 / 0.55);
+
+  /* Текст: primary ≥ 4.5:1, secondary ≥ 3:1 на canvas */
+  --color-ink: #f5f6fa;
+  --color-ink-muted: #a3a8b8;
+  /* #7C8194 даёт 4.9:1 на canvas — подписи 12px остаются читаемыми (WCAG AA) */
+  --color-ink-faint: #7c8194;
+
+  /* Границы стекла */
+  --color-hairline: rgb(255 255 255 / 0.10);
+  --color-hairline-strong: rgb(255 255 255 / 0.18);
+
+  /* Акценты */
+  --color-brand: #007aff;
+  --color-brand-ink: #ffffff;
+  --color-danger: #ff3b30;
+  --color-success: #34c759;
+  --color-warning: #ff9500;
+
+  /* Типографика */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Скругления в духе iOS */
+  --radius-card: 20px;
+  --radius-sheet: 28px;
+
+  /* Тайминги микроанимаций: 150–300ms, платформенный easing */
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-fast: 160ms;
+  --duration-base: 240ms;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    /* Safe-area: значения от Telegram, с фолбэком на системные env() */
+    --safe-top: var(--tg-safe-top, env(safe-area-inset-top, 0px));
+    --safe-bottom: var(--tg-safe-bottom, env(safe-area-inset-bottom, 0px));
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    /* Амбиентные пятна прямо на фоне страницы: дают стеклу что размывать.
+       Фиксируем attachment, чтобы свечение не «ехало» при скролле. */
+    background-color: var(--color-canvas);
+    background-image:
+      radial-gradient(60% 40% at 12% 0%, rgb(0 122 255 / 0.22), transparent 70%),
+      radial-gradient(52% 34% at 94% 10%, rgb(88 86 214 / 0.18), transparent 72%),
+      radial-gradient(75% 42% at 50% 100%, rgb(52 199 89 / 0.10), transparent 76%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    /* Внутри Mini App свайп вниз не должен закрывать приложение и дёргать pull-to-refresh */
+    overscroll-behavior: none;
+    touch-action: manipulation;
+  }
+
+  /* Цифры денег не должны «прыгать» при пересчёте */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Фокус виден всегда — убирать outline нельзя (правило №1: доступность) */
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  /* Уважаем системную настройку «меньше движения» */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Стеклянная поверхность: вынесена в утилиту, чтобы blur был единообразным
+     и не размножался разными значениями по компонентам. */
+  .glass {
+    background: color-mix(in srgb, var(--color-surface) 62%, transparent);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid var(--color-hairline);
+    /* Блик по верхней кромке: даёт ощущение толщины стекла, а не плоской заливки */
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.06),
+      0 8px 24px -12px rgb(0 0 0 / 0.8);
+    will-change: transform;
+  }
+
+
+  .pt-safe {
+    padding-top: calc(var(--safe-top) + 12px);
+  }
+  .pb-safe {
+    padding-bottom: calc(var(--safe-bottom) + 12px);
+  }
+}
+
+/* Появление шторки снизу */
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

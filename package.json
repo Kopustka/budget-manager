@@ -13,6 +13,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev:web": "npm run dev --workspace apps/web",
+    "dev": "npm run dev --workspace apps/api & npm run dev --workspace apps/web",
     "dev:api": "npm run dev --workspace apps/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "migrate": "npm run migrate --workspace apps/api"

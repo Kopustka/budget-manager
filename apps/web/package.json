@@ -4,11 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "echo \"web dev — заполняется в Фазе 3\" && exit 0",
-    "build": "echo \"web build — заполняется в Фазе 3\" && exit 0",
-    "typecheck": "echo \"web typecheck — заполняется в Фазе 3\" && exit 0"
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@budget/shared": "*"
+    "@budget/shared": "*",
+    "lucide-react": "^1.25.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.6.3",
+    "vite": "^8.1.5"
   }
 }
