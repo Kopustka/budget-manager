@@ -39,6 +39,17 @@ export const cache = {
     (pipe ?? redis).hincrby(rkey.spent(userId, period), categoryId, delta);
   },
 
+  /** Записать spent точным значением (после пересчёта из PG — источника истины). */
+  setSpent(
+    userId: string,
+    period: string,
+    categoryId: string,
+    spent: number,
+    pipe?: ChainableCommander,
+  ): void {
+    (pipe ?? redis).hset(rkey.spent(userId, period), categoryId, String(spent));
+  },
+
   // ── Лимиты по категории ──
   async getLimit(userId: string, period: string, categoryId: string): Promise<number | null> {
     const v = await redis.hget(rkey.limits(userId, period), categoryId);
@@ -63,6 +74,10 @@ export const cache = {
     pipe?: ChainableCommander,
   ): void {
     (pipe ?? redis).zadd(rkey.txCache30d(userId), occurredAtUnix, txId);
+  },
+
+  removeTxFromCache(userId: string, txId: string, pipe?: ChainableCommander): void {
+    (pipe ?? redis).zrem(rkey.txCache30d(userId), txId);
   },
 
   /** Подрезать окно: удалить всё старше (now - 30d). */

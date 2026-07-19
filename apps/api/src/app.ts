@@ -1,9 +1,14 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { pool } from './config/db.js';
 import { redis } from './config/redis.js';
-import { AppError } from './shared/errors.js';
+import { AppError, ValidationError } from './shared/errors.js';
 import { env } from './config/env.js';
+import { usersRoutes } from './modules/users/users.controller.js';
+import { walletsRoutes } from './modules/wallets/wallets.controller.js';
+import { categoriesRoutes } from './modules/categories/categories.controller.js';
+import { transactionsRoutes } from './modules/transactions/transactions.controller.js';
+import { analyticsRoutes } from './modules/analytics/analytics.controller.js';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -21,11 +26,34 @@ export function buildApp(): FastifyInstance {
     credentials: true,
   });
 
+  // Пустое тело при content-type: application/json — норма для DELETE и запросов
+  // без полезной нагрузки, не ошибка парсинга.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (_req, body: string, done) => {
+      if (!body || body.trim() === '') return done(null, undefined);
+      try {
+        done(null, JSON.parse(body));
+      } catch {
+        done(new ValidationError('Тело запроса — невалидный JSON'), undefined);
+      }
+    },
+  );
+
   // Единый обработчик ошибок → JSON { error: { code, message } }
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err: FastifyError, _req, reply) => {
     if (err instanceof AppError) {
       reply.status(err.statusCode).send({
         error: { code: err.code, message: err.message },
+      });
+      return;
+    }
+    // Ошибки самого Fastify (роутинг, парсинг) уже несут корректный 4xx — не прячем их под 500.
+    const status = err.statusCode ?? 500;
+    if (status >= 400 && status < 500) {
+      reply.status(status).send({
+        error: { code: err.code ?? 'BAD_REQUEST', message: err.message },
       });
       return;
     }
@@ -57,6 +85,13 @@ export function buildApp(): FastifyInstance {
     }
     reply.status(health.status === 'ok' ? 200 : 503).send(health);
   });
+
+  // Модули (FDD): каждый регистрируется как плагин со своим auth-хуком.
+  app.register(usersRoutes, { prefix: '/api' });
+  app.register(walletsRoutes, { prefix: '/api' });
+  app.register(categoriesRoutes, { prefix: '/api' });
+  app.register(transactionsRoutes, { prefix: '/api' });
+  app.register(analyticsRoutes, { prefix: '/api' });
 
   return app;
 }
