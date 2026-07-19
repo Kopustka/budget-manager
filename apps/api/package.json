@@ -14,7 +14,7 @@
     "dev-init-data": "tsx src/scripts/dev-init-data.ts",
     "bot": "tsx src/bot/index.ts",
     "worker": "tsx src/workers/index.ts",
-    "smoke:alerts": "tsx src/scripts/smoke-alerts.ts",
+    "smoke:alerts": "REDIS_NAMESPACE=finapp-smoke tsx src/scripts/smoke-alerts.ts",
     "smoke:bot": "tsx src/scripts/smoke-bot.ts"
   },
   "dependencies": {

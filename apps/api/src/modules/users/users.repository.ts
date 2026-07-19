@@ -1,5 +1,6 @@
 import type { User } from '@budget/shared';
-import { pool } from '../../config/db.js';
+import { pool, withTransaction } from '../../config/db.js';
+import { provisionDefaults } from './users.onboarding.js';
 
 interface UserRow {
   id: string;
@@ -20,22 +21,31 @@ function toUser(r: UserRow): User {
 }
 
 export const usersRepository = {
-  /** Найти или создать пользователя по Telegram ID (идемпотентно). */
+  /**
+   * Найти или создать пользователя по Telegram ID (идемпотентно).
+   * Новому сразу выдаём стартовый кошелёк и категории — одной транзакцией,
+   * чтобы не появился пользователь без справочников.
+   */
   async upsertByTelegram(input: {
     telegramId: number;
     username?: string | null;
     firstName?: string | null;
   }): Promise<User> {
-    const { rows } = await pool.query<UserRow>(
-      `INSERT INTO users (telegram_id, username, first_name)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (telegram_id) DO UPDATE
-         SET username = EXCLUDED.username,
-             first_name = EXCLUDED.first_name
-       RETURNING *`,
-      [input.telegramId, input.username ?? null, input.firstName ?? null],
-    );
-    return toUser(rows[0]!);
+    return withTransaction(async (client) => {
+      const { rows } = await client.query<UserRow & { inserted: boolean }>(
+        `INSERT INTO users (telegram_id, username, first_name)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (telegram_id) DO UPDATE
+           SET username = EXCLUDED.username,
+               first_name = EXCLUDED.first_name
+         RETURNING *, (xmax = 0) AS inserted`,
+        [input.telegramId, input.username ?? null, input.firstName ?? null],
+      );
+
+      const row = rows[0]!;
+      if (row.inserted) await provisionDefaults(client, row.id);
+      return toUser(row);
+    });
   },
 
   async findByTelegramId(telegramId: number): Promise<User | null> {

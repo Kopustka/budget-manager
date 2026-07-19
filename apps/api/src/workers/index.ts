@@ -2,6 +2,7 @@ import { createBot, telegramSender } from '../bot/bot.js';
 import { alertsService } from '../modules/alerts/alerts.service.js';
 import { pool } from '../config/db.js';
 import { redis } from '../config/redis.js';
+import { rkey } from '../redis/keys.js';
 import { runAlertsWorker } from './alerts.worker.js';
 
 /**
@@ -35,11 +36,13 @@ async function main(): Promise<void> {
     (err: unknown) => console.error('Планировщик:', err),
   );
 
-  console.log('Воркер запущен: слушаю finapp:queue:bot_alerts');
+  console.log(`Воркер запущен: слушаю ${rkey.botAlertsQueue}`);
   const delivered = await runAlertsWorker({
     send,
     stopped: () => stopping,
     onError: (err) => console.error('Воркер:', err),
+    onPermanentFailure: (telegramId, reason) =>
+      console.warn(`Пуш не доставлен (${telegramId}): ${reason}`),
   });
 
   clearInterval(scheduler);

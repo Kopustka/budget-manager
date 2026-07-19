@@ -15,6 +15,9 @@ const initData = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..'
   .trim()
   .replace(/^VITE_DEV_INIT_DATA=/, '');
 
+/** По умолчанию dev-сервер; BASE_URL позволяет прогнать тот же сценарий против прода. */
+const BASE_URL = process.env.BASE_URL ?? 'http://127.0.0.1:5173';
+
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 
@@ -71,7 +74,7 @@ async function drag(from, to) {
 const balance = async () =>
   (await page.locator('header .tabular').first().innerText()).replace(/\s|₽/g, '');
 
-await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
+await page.goto(BASE_URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
 
 console.log('\n[1] Загрузка экрана');

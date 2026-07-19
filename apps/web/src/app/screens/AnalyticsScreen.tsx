@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DistributionResponse, VelocityResponse } from '@budget/shared';
-import { Table2, TrendingDown, TrendingUp } from 'lucide-react';
+import { RefreshCw, Table2, TrendingDown, TrendingUp } from 'lucide-react';
 import { analyticsApi } from '@/entities/analytics/api';
 import { useBudgetStore } from '@/stores/useBudgetStore';
 import { GlassCard } from '@/shared/ui/GlassCard';
 import { Money } from '@/shared/ui/Money';
 import { Skeleton } from '@/shared/ui/Skeleton';
+import { Button } from '@/shared/ui/Button';
 import { formatMoney, formatPercent } from '@/shared/lib/format';
 import { haptics } from '@/shared/lib/telegram';
 import { DonutChart, type DonutSlice } from '@/features/analytics/DonutChart';
@@ -20,9 +21,11 @@ export function AnalyticsScreen() {
   const [velocity, setVelocity] = useState<VelocityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [asTable, setAsTable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let alive = true;
+    setError(null);
     Promise.all([analyticsApi.distribution(), analyticsApi.velocity()])
       .then(([d, v]) => {
         if (!alive) return;
@@ -35,7 +38,7 @@ export function AnalyticsScreen() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [attempt]);
 
   /** Цвет закреплён за категорией по порядку создания — рейтинг на него не влияет. */
   const colorMap = useMemo(
@@ -87,8 +90,17 @@ export function AnalyticsScreen() {
 
   if (error) {
     return (
-      <main className="mx-auto max-w-md px-4 pt-safe">
-        <p className="pt-8 text-center text-ink-muted">{error}</p>
+      <main className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 pt-16 text-center">
+        <p className="text-ink-muted">{error}</p>
+        <Button
+          onClick={() => {
+            haptics.impact();
+            setAttempt((n) => n + 1);
+          }}
+        >
+          <RefreshCw size={18} strokeWidth={1.75} aria-hidden="true" />
+          Повторить
+        </Button>
       </main>
     );
   }

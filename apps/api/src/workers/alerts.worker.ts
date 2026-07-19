@@ -17,6 +17,21 @@ export interface WorkerOptions {
   /** Разовый прогон: выйти, как только очередь опустела (проверки, ручной дренаж). */
   stopWhenEmpty?: boolean;
   onError?: (err: unknown) => void;
+  /** Адресат недостижим навсегда: чат не найден или бот заблокирован. */
+  onPermanentFailure?: (telegramId: number, reason: string) => void;
+}
+
+/** Ошибка Bot API, после которой повтор бессмыслен. */
+function isPermanentDeliveryFailure(err: unknown): boolean {
+  const code = (err as { error_code?: number } | null)?.error_code;
+  if (code === 403) return true; // бот заблокирован пользователем
+  const description = String((err as { description?: string } | null)?.description ?? '');
+  return code === 400 && /chat not found|user is deactivated/i.test(description);
+}
+
+function describeFailure(err: unknown): string {
+  const e = err as { error_code?: number; description?: string } | null;
+  return `${e?.error_code ?? '?'}: ${e?.description ?? 'неизвестная причина'}`;
 }
 
 export async function runAlertsWorker(options: WorkerOptions): Promise<number> {
@@ -26,6 +41,7 @@ export async function runAlertsWorker(options: WorkerOptions): Promise<number> {
     stopped = () => false,
     stopWhenEmpty = false,
     onError,
+    onPermanentFailure,
   } = options;
   let delivered = 0;
 
@@ -47,8 +63,14 @@ export async function runAlertsWorker(options: WorkerOptions): Promise<number> {
       delivered += 1;
     } catch (err) {
       // Пуш не критичен: логируем и идём дальше, чтобы одна недоставка
-      // не блокировала очередь остальным пользователям.
-      onError?.(err);
+      // не блокировала очередь остальным пользователям. Постоянные отказы
+      // (чат не найден, бот заблокирован) — это не инцидент, а факт: пишем
+      // строкой, а не стектрейсом, иначе журнал захлёбывается.
+      if (isPermanentDeliveryFailure(err)) {
+        onPermanentFailure?.(alert.telegramId, describeFailure(err));
+      } else {
+        onError?.(err);
+      }
     }
   }
 

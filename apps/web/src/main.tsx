@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
+import { ErrorBoundary } from './app/ErrorBoundary';
 import { initTelegram } from './shared/lib/telegram';
 import './styles/index.css';
 
@@ -12,6 +13,8 @@ if (!root) throw new Error('Не найден #root');
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

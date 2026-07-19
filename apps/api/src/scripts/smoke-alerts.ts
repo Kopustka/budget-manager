@@ -1,3 +1,4 @@
+import { env } from '../config/env.js';
 import { pool } from '../config/db.js';
 import { redis } from '../config/redis.js';
 import { rkey, currentPeriod } from '../redis/keys.js';
@@ -27,7 +28,7 @@ function check(name: string, ok: boolean, detail?: unknown): void {
 async function resetUser(userId: string): Promise<void> {
   await pool.query('DELETE FROM transactions WHERE user_id = $1', [userId]);
   await pool.query('UPDATE wallets SET balance = 50000000 WHERE user_id = $1', [userId]);
-  const keys = await redis.keys(`finapp:user:${userId}:*`);
+  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${userId}:*`);
   if (keys.length > 0) await redis.del(...keys);
   await redis.del(rkey.botAlertsQueue, rkey.botAlertsScheduled);
 }
@@ -117,7 +118,7 @@ async function main(): Promise<void> {
 
   console.log('[5] Отложенные напоминания');
   await pool.query('DELETE FROM transactions WHERE user_id = $1', [user.id]);
-  const keys = await redis.keys(`finapp:user:${user.id}:alert:*`);
+  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${user.id}:alert:*`);
   if (keys.length > 0) await redis.del(...keys);
   const scheduled = await alertsService.scheduleEveningReminders();
   check('напоминание запланировано', scheduled > 0, scheduled);

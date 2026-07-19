@@ -75,7 +75,7 @@ async function resetTestUser(): Promise<void> {
   if (!userId) return;
   await pool.query('DELETE FROM transactions WHERE user_id = $1', [userId]);
   await pool.query('UPDATE wallets SET balance = 10000000 WHERE user_id = $1', [userId]);
-  const keys = await redis.keys(`finapp:user:${userId}:*`);
+  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${userId}:*`);
   if (keys.length > 0) await redis.del(...keys);
 }
 
