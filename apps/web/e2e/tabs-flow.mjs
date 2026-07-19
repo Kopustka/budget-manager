@@ -206,8 +206,9 @@ await page.waitForTimeout(1200);
 check('день начала возвращён на 1', (await dayButton(1).getAttribute('aria-pressed')) === 'true');
 
 // 409 — наш же тест дубликата имени: ожидаемый ответ, а не сбой страницы.
+// Ищем код без слова Conflict: по HTTP/2 (прод за nginx) браузер пишет «409 ()».
 const unexpected = errors.filter(
-  (e) => !e.includes('net::ERR_FAILED') && !e.includes('409 (Conflict)'),
+  (e) => !e.includes('net::ERR_FAILED') && !/status of 409\b/.test(e),
 );
 console.log('\nconsole errors:', unexpected.length ? unexpected : 'none');
 const failed = results.filter((r) => !r.ok).length;
