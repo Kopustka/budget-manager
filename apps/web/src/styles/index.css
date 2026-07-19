@@ -116,7 +116,9 @@
     background: color-mix(in srgb, var(--color-surface) 62%, transparent);
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);
-    border: 1px solid var(--color-hairline);
+    /* Цвет рамки — через переменную: иначе состояния (цель жеста, овердрафт)
+       проигрывают этой утилите по порядку в таблице стилей. */
+    border: 1px solid var(--glass-border, var(--color-hairline));
     /* Блик по верхней кромке: даёт ощущение толщины стекла, а не плоской заливки */
     box-shadow:
       inset 0 1px 0 0 rgb(255 255 255 / 0.06),

@@ -21,7 +21,8 @@ export function Toaster() {
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 top-0 z-60 flex flex-col items-center gap-2 pt-safe px-4"
+      // Сверху: низ занимает главная кнопка шторки, её перекрывать нельзя.
+      className="pointer-events-none fixed inset-x-0 top-0 z-60 flex flex-col items-center gap-2 px-4 pt-safe"
     >
       {toasts.map((t) => {
         const Icon = TONE_ICON[t.tone];
