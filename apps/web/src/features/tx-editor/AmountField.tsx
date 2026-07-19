@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { formatMoney } from '@/shared/lib/format';
+import { useCurrency } from '@/shared/lib/useCurrency';
 import { cn } from '@/shared/ui/cn';
 
 interface AmountFieldProps {
@@ -23,6 +24,7 @@ export function AmountField({
   error,
 }: AmountFieldProps) {
   const id = useId();
+  const currency = useCurrency();
 
   return (
     <div>
@@ -60,7 +62,7 @@ export function AmountField({
             onClick={() => onChange(String(amount))}
             className="min-h-11 rounded-full bg-hairline px-4 text-sm transition-colors duration-[var(--duration-fast)] active:bg-hairline-strong"
           >
-            {formatMoney(amount * 100)}
+            {formatMoney(amount * 100, currency)}
           </button>
         ))}
       </div>

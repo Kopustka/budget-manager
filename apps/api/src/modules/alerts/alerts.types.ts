@@ -4,6 +4,8 @@ export interface AlertBase {
   /** Кому слать: Telegram ID (chat_id личного чата с ботом). */
   telegramId: number;
   userId: string;
+  /** Валюта на момент постановки в очередь — текст пуша не должен зависеть от поздней смены. */
+  currency: string;
   /** Момент постановки в очередь, ISO. */
   queuedAt: string;
 }

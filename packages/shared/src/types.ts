@@ -9,6 +9,13 @@ export interface User {
   telegramId: number;
   username: string | null;
   firstName: string | null;
+  /** Валюта отображения. Суммы хранятся в минорных единицах этой валюты. */
+  currency: string;
+  /**
+   * День начала расчётного месяца (1–28). Период с меткой YYYY-MM начинается
+   * этим числом и заканчивается им же в следующем месяце (не включая).
+   */
+  monthStartDay: number;
   createdAt: string;
 }
 

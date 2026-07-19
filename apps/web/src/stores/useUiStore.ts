@@ -8,11 +8,17 @@ export interface Toast {
   tone: 'info' | 'error' | 'success';
 }
 
+/** Разделы нижней навигации. */
+export type Tab = 'home' | 'history' | 'analytics' | 'settings';
+
 interface UiState {
   /** Выбранный день карусели времени (YYYY-MM-DD, UTC). */
   selectedDay: string;
+  /** Активный раздел. Живёт в сторе, чтобы экраны могли уводить друг на друга. */
+  tab: Tab;
   toasts: Toast[];
   setSelectedDay: (day: string) => void;
+  setTab: (tab: Tab) => void;
   notify: (message: string, tone?: Toast['tone']) => void;
   dismiss: (id: number) => void;
 }
@@ -21,9 +27,11 @@ let toastId = 0;
 
 export const useUiStore = create<UiState>((set) => ({
   selectedDay: new Date().toISOString().slice(0, 10),
+  tab: 'home',
   toasts: [],
 
   setSelectedDay: (selectedDay) => set({ selectedDay }),
+  setTab: (tab) => set({ tab }),
 
   notify: (message, tone = 'info') => {
     const id = ++toastId;

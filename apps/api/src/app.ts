@@ -9,6 +9,8 @@ import { walletsRoutes } from './modules/wallets/wallets.controller.js';
 import { categoriesRoutes } from './modules/categories/categories.controller.js';
 import { transactionsRoutes } from './modules/transactions/transactions.controller.js';
 import { analyticsRoutes } from './modules/analytics/analytics.controller.js';
+import { settingsRoutes } from './modules/settings/settings.controller.js';
+import { exportRoutes } from './modules/export/export.controller.js';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -92,6 +94,8 @@ export function buildApp(): FastifyInstance {
   app.register(categoriesRoutes, { prefix: '/api' });
   app.register(transactionsRoutes, { prefix: '/api' });
   app.register(analyticsRoutes, { prefix: '/api' });
+  app.register(settingsRoutes, { prefix: '/api' });
+  app.register(exportRoutes, { prefix: '/api' });
 
   return app;
 }

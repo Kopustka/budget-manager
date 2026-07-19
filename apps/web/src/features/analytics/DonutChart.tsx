@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { formatMoney, formatPercent } from '@/shared/lib/format';
+import { useCurrency } from '@/shared/lib/useCurrency';
 import { haptics } from '@/shared/lib/telegram';
 import { Money } from '@/shared/ui/Money';
 import { cn } from '@/shared/ui/cn';
@@ -35,6 +36,7 @@ const GAP = 2;
  */
 export function DonutChart({ slices, total }: DonutChartProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const currency = useCurrency();
 
   // Рисуем по убыванию: крупнейший сегмент стартует с 12 часов.
   const ordered = useMemo(() => [...slices].sort((a, b) => b.value - a.value), [slices]);
@@ -69,7 +71,7 @@ export function DonutChart({ slices, total }: DonutChartProps) {
           className="h-[200px] w-[200px] -rotate-90"
           role="img"
           aria-label={`Распределение трат: ${ordered
-            .map((s) => `${s.name} ${formatMoney(s.value)}`)
+            .map((s) => `${s.name} ${formatMoney(s.value, currency)}`)
             .join(', ')}`}
         >
           {segments.map(({ slice, length, offset }) => {

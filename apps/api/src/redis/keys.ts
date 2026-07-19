@@ -36,10 +36,3 @@ export const rkey = {
   alertOnce: (userId: string, kind: string, scope: string) =>
     `${NS}:user:${userId}:alert:${kind}:${scope}`,
 } as const;
-
-/** Текущий период в формате YYYY-MM (UTC). */
-export function currentPeriod(date: Date = new Date()): string {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  return `${y}-${m}`;
-}

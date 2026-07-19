@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import type { VelocityPoint } from '@budget/shared';
 import { formatMoneyCompact } from '@/shared/lib/format';
+import { useCurrency } from '@/shared/lib/useCurrency';
 import { Money } from '@/shared/ui/Money';
 import { haptics } from '@/shared/lib/telegram';
 
@@ -24,6 +25,7 @@ const PAD = { top: 16, right: 16, bottom: 24, left: 16 };
  * ось одна — второй шкалы здесь быть не может.
  */
 export function VelocityChart({ points, budget, todayIndex }: VelocityChartProps) {
+  const currency = useCurrency();
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
 
@@ -81,7 +83,8 @@ export function VelocityChart({ points, budget, todayIndex }: VelocityChartProps
         role="img"
         aria-label={`Скорость трат: к текущему дню потрачено ${formatMoneyCompact(
           last?.cumulative ?? 0,
-        )}${budget === null ? '' : `, равномерный план ${formatMoneyCompact(last?.ideal ?? 0)}`}`}
+          currency,
+        )}${budget === null ? '' : `, равномерный план ${formatMoneyCompact(last?.ideal ?? 0, currency)}`}`}
         onPointerDown={handlePointer}
         onPointerMove={(e) => e.buttons > 0 && handlePointer(e)}
         onPointerLeave={() => setHover(null)}

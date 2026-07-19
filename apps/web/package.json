@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "e2e": "node e2e/dnd-flow.mjs"
+    "e2e": "node e2e/dnd-flow.mjs",
+    "e2e:tabs": "node e2e/tabs-flow.mjs"
   },
   "dependencies": {
     "@budget/shared": "*",

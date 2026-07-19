@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, RefreshCw, WalletMinimal } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, RefreshCw, WalletMinimal } from 'lucide-react';
 import type { Transaction } from '@budget/shared';
 import { useBudgetStore } from '@/stores/useBudgetStore';
 import { useUiStore } from '@/stores/useUiStore';
+import { useSettingsStore } from '@/stores/useSettingsStore';
 import { GlassCard } from '@/shared/ui/GlassCard';
 import { Money } from '@/shared/ui/Money';
 import { LimitBar } from '@/shared/ui/LimitBar';
 import { CategoryIcon } from '@/shared/ui/CategoryIcon';
 import { Skeleton, SkeletonCard } from '@/shared/ui/Skeleton';
 import { Button } from '@/shared/ui/Button';
-import { formatRelativeDay, formatTime } from '@/shared/lib/format';
+import { formatDay, formatRelativeDay, formatTime } from '@/shared/lib/format';
 import { haptics, isInsideTelegram } from '@/shared/lib/telegram';
 import { CategorySheet } from '@/features/category-details/CategorySheet';
 import { DragNode, DropNode } from '@/features/dnd-matrix/dnd-nodes';
@@ -21,13 +22,20 @@ import { QuickAddSheet } from '@/features/tx-editor/QuickAddSheet';
 import type { CategoryWithStats } from '@/entities/category/api';
 import { cn } from '@/shared/ui/cn';
 
+/** Сколько операций дня показываем на главной, прежде чем увести в «Историю». */
+const PREVIEW_LIMIT = 3;
+
 /**
  * Главный экран: карусель времени, матрица Доход → Кошелёк → Расход,
- * лента операций за выбранный день и правка через шторку.
+ * последние операции выбранного дня и правка через шторку.
  */
 export function HomeScreen() {
   const { wallets, categories, transactions, loading, error, load } = useBudgetStore();
   const selectedDay = useUiStore((s) => s.selectedDay);
+  const setTab = useUiStore((s) => s.setTab);
+  const monthStartDay = useSettingsStore((s) => s.monthStartDay);
+  const periodStart = useSettingsStore((s) => s.periodStart);
+  const periodEnd = useSettingsStore((s) => s.periodEnd);
 
   const [openCategory, setOpenCategory] = useState<CategoryWithStats | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -41,17 +49,21 @@ export function HomeScreen() {
   const incomes = categories.filter((c) => c.kind === 'income');
 
   // ru-locale добавляет «г.» — для заголовка это лишний шум, собираем метку сами.
+  // При сдвинутом дне начала месяца календарное название соврало бы, поэтому
+  // показываем границы периода как есть: «2 июл — 1 авг».
   const monthLabel = useMemo(() => {
+    if (monthStartDay !== 1 && periodStart && periodEnd) {
+      return `${formatDay(periodStart)} — ${formatDay(periodEnd)}`;
+    }
     const now = new Date();
     const month = new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(now);
     return `${month[0]?.toUpperCase()}${month.slice(1)} ${now.getFullYear()}`;
-  }, []);
+  }, [monthStartDay, periodStart, periodEnd]);
 
-  /** Итоги текущего месяца — контекст к балансу: сколько пришло и сколько ушло. */
+  /** Итоги расчётного периода — контекст к балансу: сколько пришло и сколько ушло. */
   const monthTotals = useMemo(() => {
-    const from = new Date();
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
+    const from = periodStart ? new Date(periodStart) : new Date(new Date().setDate(1));
+    if (!periodStart) from.setHours(0, 0, 0, 0);
     return transactions.reduce(
       (acc, t) => {
         if (new Date(t.occurredAt) < from) return acc;
@@ -61,13 +73,16 @@ export function HomeScreen() {
       },
       { income: 0, expense: 0 },
     );
-  }, [transactions]);
+  }, [transactions, periodStart]);
 
   /** Лента показывает выбранный в карусели день. */
   const dayTransactions = useMemo(
     () => transactions.filter((t) => localDayKey(new Date(t.occurredAt)) === selectedDay),
     [transactions, selectedDay],
   );
+
+  // На главной — только свежие операции: полная лента живёт в разделе «История».
+  const previewTransactions = dayTransactions.slice(0, PREVIEW_LIMIT);
 
   if (error) {
     return (
@@ -211,7 +226,7 @@ export function HomeScreen() {
           </GlassCard>
         ) : (
           <ul className="flex flex-col gap-2">
-            {dayTransactions.map((t) => {
+            {previewTransactions.map((t) => {
               const isDeposit = t.type === 'deposit';
               const Icon = isDeposit ? ArrowDownLeft : ArrowUpRight;
               return (
@@ -245,6 +260,21 @@ export function HomeScreen() {
             })}
           </ul>
         )}
+
+        {/* Ссылка видна всегда: из неё видно, что лента за день — не вся история */}
+        <button
+          type="button"
+          onClick={() => {
+            haptics.selection();
+            setTab('history');
+          }}
+          className="mt-2 flex min-h-11 w-full items-center justify-center gap-1 text-sm text-brand"
+        >
+          {dayTransactions.length > PREVIEW_LIMIT
+            ? `Ещё ${dayTransactions.length - PREVIEW_LIMIT} за день · вся история`
+            : 'Вся история'}
+          <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
+        </button>
       </Section>
 
       <CategorySheet

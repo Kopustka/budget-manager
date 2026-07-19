@@ -2,7 +2,7 @@ import type { User } from '@budget/shared';
 import { pool } from '../../config/db.js';
 import { redis } from '../../config/redis.js';
 import { rkey } from '../../redis/keys.js';
-import { daysInPeriod, periodRange } from '../../shared/period.js';
+import { dayIndexInPeriod, daysInPeriod, periodRange } from '../../shared/period.js';
 import { alertsQueue, pushOnce } from './alerts.queue.js';
 import type { AlertBase, BotAlert } from './alerts.types.js';
 
@@ -19,6 +19,7 @@ function base(user: User): AlertBase {
   return {
     telegramId: user.telegramId,
     userId: user.id,
+    currency: user.currency,
     queuedAt: new Date().toISOString(),
   };
 }
@@ -78,7 +79,7 @@ export const alertsService = {
     const budget = Number(budgetRows[0]?.total ?? 0);
     if (budget <= 0) return false; // без лимитов «быстро» не определить
 
-    const dailyBudget = Math.round(budget / daysInPeriod(period));
+    const dailyBudget = Math.round(budget / daysInPeriod(period, user.monthStartDay));
     const dayKey = day.toISOString().slice(0, 10);
     const { rows } = await pool.query<{ total: string | null }>(
       `SELECT COALESCE(SUM(amount), 0) AS total
@@ -95,7 +96,7 @@ export const alertsService = {
      * всё ещё в графике. Ругаемся, только если и накопленный факт обогнал
      * накопленный план, иначе уведомление ложное и его перестают читать.
      */
-    const { start } = periodRange(period);
+    const { start } = periodRange(period, user.monthStartDay);
     const { rows: cumulativeRows } = await pool.query<{ total: string | null }>(
       `SELECT COALESCE(SUM(amount), 0) AS total
          FROM transactions
@@ -104,7 +105,9 @@ export const alertsService = {
       [user.id, start, dayKey],
     );
     const cumulative = Number(cumulativeRows[0]?.total ?? 0);
-    const dayNumber = Number(dayKey.slice(-2));
+    // Позиция дня внутри периода, а не число месяца: при сдвинутом дне начала
+    // это разные величины, и план на «сегодня» считался бы неверно.
+    const dayNumber = dayIndexInPeriod(day, period, user.monthStartDay) + 1;
     if (cumulative <= dailyBudget * dayNumber) return false;
 
     return pushOnce(
@@ -131,8 +134,8 @@ export const alertsService = {
       ),
     );
 
-    const { rows } = await pool.query<{ id: string; telegram_id: string }>(
-      `SELECT u.id, u.telegram_id
+    const { rows } = await pool.query<{ id: string; telegram_id: string; currency: string }>(
+      `SELECT u.id, u.telegram_id, u.currency
          FROM users u
         WHERE NOT EXISTS (
           SELECT 1 FROM transactions t
@@ -149,6 +152,7 @@ export const alertsService = {
         kind: 'evening_reminder',
         userId: row.id,
         telegramId: Number(row.telegram_id),
+        currency: row.currency,
         queuedAt: now.toISOString(),
       };
       // Дедупликация: одно напоминание на пользователя в сутки.

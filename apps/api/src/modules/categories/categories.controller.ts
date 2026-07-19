@@ -5,7 +5,7 @@ import { authenticate } from '../../shared/auth.js';
 import { requireUser } from '../../shared/current-user.js';
 import { parseOrThrow } from '../../shared/validate.js';
 import { cache } from '../../redis/cache.js';
-import { currentPeriod } from '../../redis/keys.js';
+import { periodOf } from '../../shared/period.js';
 import { categoriesRepository } from './categories.repository.js';
 import { transactionsRepository } from '../transactions/transactions.repository.js';
 
@@ -17,14 +17,14 @@ export async function categoriesRoutes(app: FastifyInstance): Promise<void> {
     '/categories',
     async (req) => {
       const user = requireUser(req);
-      const period = req.query.period ?? currentPeriod();
+      const period = req.query.period ?? periodOf(new Date(), user.monthStartDay);
       const categories = await categoriesRepository.listByUser(user.id, req.query.kind);
 
       const items = await Promise.all(
         categories.map(async (c) => {
           if (c.kind !== 'expense') return { ...c, spent: null, limit: null, isOverdraft: false };
           const [spent, limit] = await Promise.all([
-            transactionsRepository.sumSpent(pool, user.id, c.id, period),
+            transactionsRepository.sumSpent(pool, user.id, c.id, period, user.monthStartDay),
             categoriesRepository.findLimit(pool, c.id, period),
           ]);
           cache.setSpent(user.id, period, c.id, spent);

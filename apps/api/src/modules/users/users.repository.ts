@@ -7,6 +7,8 @@ interface UserRow {
   telegram_id: string;
   username: string | null;
   first_name: string | null;
+  currency: string;
+  month_start_day: number;
   created_at: Date;
 }
 
@@ -16,6 +18,8 @@ function toUser(r: UserRow): User {
     telegramId: Number(r.telegram_id),
     username: r.username,
     firstName: r.first_name,
+    currency: r.currency,
+    monthStartDay: r.month_start_day,
     createdAt: r.created_at.toISOString(),
   };
 }

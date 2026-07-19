@@ -2,7 +2,8 @@ import { createHmac } from 'node:crypto';
 import { env } from '../config/env.js';
 import { pool } from '../config/db.js';
 import { redis } from '../config/redis.js';
-import { rkey, currentPeriod } from '../redis/keys.js';
+import { rkey } from '../redis/keys.js';
+import { periodOf } from '../shared/period.js';
 
 /**
  * Сквозная проверка Фазы 2: DnD-сценарий через реальный HTTP + сверка PG↔Redis.
@@ -80,7 +81,7 @@ async function resetTestUser(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const period = currentPeriod();
+  const period = periodOf(new Date());
   await resetTestUser();
 
   console.log('\n[1] Здоровье и профиль');
