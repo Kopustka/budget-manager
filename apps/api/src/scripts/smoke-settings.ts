@@ -39,6 +39,24 @@ async function reset(userId: string): Promise<void> {
     [userId],
   );
   await pool.query("UPDATE users SET month_start_day = 1, currency = 'RUB' WHERE id = $1", [userId]);
+  // Лимиты пересчёт тоже делит на курс, а обратного хода у него нет: без этого
+  // прогон за прогоном они усыхают, и следующий smoke-dnd ловит овердрафт
+  // с первого же списания. Возвращаем ровно сидовое состояние — лимит только
+  // на «Продукты» (см. apps/api/src/db/seed.ts).
+  await pool.query(
+    `DELETE FROM category_limits
+      WHERE category_id IN (
+        SELECT id FROM categories WHERE user_id = $1 AND name <> 'Продукты'
+      )`,
+    [userId],
+  );
+  await pool.query(
+    `UPDATE category_limits SET limit_amount = 2000000
+      WHERE category_id IN (
+        SELECT id FROM categories WHERE user_id = $1 AND name = 'Продукты'
+      )`,
+    [userId],
+  );
   const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${userId}:*`);
   if (keys.length > 0) await redis.del(...keys);
 }
