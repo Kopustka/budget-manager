@@ -1,0 +1,20 @@
+[Unit]
+Description=Budget Manager alerts worker
+# Приложение бесполезно без своих БД, поэтому ждём их и перезапускаемся вместе с ними.
+After=network-online.target postgresql@18-main.service redis-server.service
+Wants=network-online.target
+Requires=postgresql@18-main.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/projects/budget-manager/apps/api
+ExecStart=/usr/bin/node dist/workers/index.js
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=budget-worker
+
+[Install]
+WantedBy=multi-user.target

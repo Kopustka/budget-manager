@@ -27,11 +27,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const headers: Record<string, string> = { Authorization: `tma ${getInitData()}` };
   if (body !== undefined) headers['content-type'] = 'application/json';
 
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    // fetch падает только на сетевом уровне — отличаем это от ошибки сервера.
+    throw new ApiError(0, 'NETWORK', 'Нет связи с сервером. Проверьте интернет и повторите.');
+  }
 
   const payload = (await res.json().catch(() => null)) as
     | { error?: { code: string; message: string } }
@@ -39,6 +45,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   if (!res.ok) {
     const err = payload?.error;
+    // initData живёт сутки: по истечении сервер отвечает 401, и единственное
+    // лечение — переоткрыть Mini App. Говорим это прямо, а не «не авторизован».
+    if (res.status === 401) {
+      throw new ApiError(
+        401,
+        err?.code ?? 'UNAUTHORIZED',
+        'Сессия Telegram устарела. Закройте и откройте приложение заново.',
+      );
+    }
     throw new ApiError(
       res.status,
       err?.code ?? 'UNKNOWN',
