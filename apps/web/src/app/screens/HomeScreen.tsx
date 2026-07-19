@@ -1,5 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, RefreshCw, WalletMinimal } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronRight,
+  Plus,
+  RefreshCw,
+  WalletMinimal,
+} from 'lucide-react';
 import type { Transaction } from '@budget/shared';
 import { useBudgetStore } from '@/stores/useBudgetStore';
 import { useUiStore } from '@/stores/useUiStore';
@@ -14,8 +21,8 @@ import { formatDay, formatRelativeDay, formatTime } from '@/shared/lib/format';
 import { haptics, isInsideTelegram } from '@/shared/lib/telegram';
 import { CategorySheet } from '@/features/category-details/CategorySheet';
 import { DragNode, DropNode } from '@/features/dnd-matrix/dnd-nodes';
-import { TimeCarousel, localDayKey } from '@/features/time-carousel/TimeCarousel';
 import { CategoryPager } from '@/features/category-pager/CategoryPager';
+import { CreateEntitySheet, type EntityKind } from '@/features/entity-editor/CreateEntitySheet';
 import { OperationSheet } from '@/features/tx-editor/OperationSheet';
 import { EditTransactionSheet } from '@/features/tx-editor/EditTransactionSheet';
 import { QuickAddSheet } from '@/features/tx-editor/QuickAddSheet';
@@ -40,6 +47,7 @@ export function HomeScreen() {
   const [openCategory, setOpenCategory] = useState<CategoryWithStats | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [quickAdd, setQuickAdd] = useState(false);
+  const [creating, setCreating] = useState<EntityKind | null>(null);
 
   const totalBalance = useMemo(
     () => wallets.reduce((sum, w) => sum + w.balance, 0),
@@ -75,14 +83,14 @@ export function HomeScreen() {
     );
   }, [transactions, periodStart]);
 
-  /** Лента показывает выбранный в карусели день. */
-  const dayTransactions = useMemo(
-    () => transactions.filter((t) => localDayKey(new Date(t.occurredAt)) === selectedDay),
-    [transactions, selectedDay],
-  );
-
   // На главной — только свежие операции: полная лента живёт в разделе «История».
-  const previewTransactions = dayTransactions.slice(0, PREVIEW_LIMIT);
+  const previewTransactions = useMemo(
+    () =>
+      [...transactions]
+        .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+        .slice(0, PREVIEW_LIMIT),
+    [transactions],
+  );
 
   if (error) {
     return (
@@ -126,8 +134,6 @@ export function HomeScreen() {
         </div>
       </header>
 
-      <TimeCarousel transactions={transactions} onQuickAdd={() => setQuickAdd(true)} />
-
       <Section title="Источники дохода" hint="Потяните в кошелёк, чтобы зачислить">
         <div className="flex flex-wrap gap-2">
           {incomes.map((c) => (
@@ -138,6 +144,7 @@ export function HomeScreen() {
               </span>
             </DragNode>
           ))}
+          <AddButton label="Источник дохода" onClick={() => setCreating('income')} pill />
         </div>
       </Section>
 
@@ -167,6 +174,7 @@ export function HomeScreen() {
                 )}
               </DropNode>
             ))}
+            <AddButton label="Кошелёк" onClick={() => setCreating('wallet')} />
           </div>
         )}
       </Section>
@@ -213,15 +221,20 @@ export function HomeScreen() {
             )}
           />
         )}
+        {/* Кнопка под пейджером, а не плиткой внутри: она не должна занимать
+            место в постраничной сетке и уезжать на вторую страницу */}
+        <div className="pt-3">
+          <AddButton label="Категория расхода" onClick={() => setCreating('expense')} />
+        </div>
       </Section>
 
-      <Section title={`Операции · ${formatRelativeDay(`${selectedDay}T12:00:00.000Z`)}`}>
+      <Section title="Последние операции">
         {loading && transactions.length === 0 ? (
           <SkeletonCard />
-        ) : dayTransactions.length === 0 ? (
+        ) : previewTransactions.length === 0 ? (
           <GlassCard>
             <p className="text-sm text-ink-muted">
-              За этот день операций нет. Перетащите доход в кошелёк или нажмите «+».
+              Операций пока нет. Перетащите доход в кошелёк или нажмите «+».
             </p>
           </GlassCard>
         ) : (
@@ -251,7 +264,9 @@ export function HomeScreen() {
                       <span className="block truncate text-sm">
                         {t.comment ?? t.subcategory ?? (isDeposit ? 'Зачисление' : 'Списание')}
                       </span>
-                      <span className="text-xs text-ink-faint">{formatTime(t.occurredAt)}</span>
+                      <span className="text-xs text-ink-faint">
+                        {formatRelativeDay(t.occurredAt)}, {formatTime(t.occurredAt)}
+                      </span>
                     </span>
                     <Money value={t.amount} tone={isDeposit ? 'positive' : 'negative'} />
                   </GlassCard>
@@ -261,7 +276,7 @@ export function HomeScreen() {
           </ul>
         )}
 
-        {/* Ссылка видна всегда: из неё видно, что лента за день — не вся история */}
+        {/* Ссылка видна всегда: из неё понятно, что тремя строками дело не кончается */}
         <button
           type="button"
           onClick={() => {
@@ -270,22 +285,60 @@ export function HomeScreen() {
           }}
           className="mt-2 flex min-h-11 w-full items-center justify-center gap-1 text-sm text-brand"
         >
-          {dayTransactions.length > PREVIEW_LIMIT
-            ? `Ещё ${dayTransactions.length - PREVIEW_LIMIT} за день · вся история`
-            : 'Вся история'}
+          Вся история
           <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
         </button>
       </Section>
 
-      <CategorySheet
-        category={openCategory}
-        transactions={transactions}
-        onClose={() => setOpenCategory(null)}
-      />
+      {/* Запись операции без жеста. Кнопка плавающая: раньше она жила в карусели,
+          а карусель уехала в шторку — без неё способ ввода с клавиатуры пропал бы */}
+      <button
+        type="button"
+        onClick={() => {
+          haptics.impact('medium');
+          setQuickAdd(true);
+        }}
+        aria-label="Записать операцию"
+        className="fixed right-4 bottom-24 z-30 grid h-14 w-14 place-items-center rounded-2xl bg-brand text-brand-ink shadow-lg transition-transform duration-[var(--duration-fast)] active:scale-95"
+      >
+        <Plus size={26} strokeWidth={2} aria-hidden="true" />
+      </button>
+
+      <CategorySheet category={openCategory} onClose={() => setOpenCategory(null)} />
       <OperationSheet />
       <EditTransactionSheet transaction={editing} onClose={() => setEditing(null)} />
       <QuickAddSheet open={quickAdd} onClose={() => setQuickAdd(false)} />
+      <CreateEntitySheet kind={creating} onClose={() => setCreating(null)} />
     </main>
+  );
+}
+
+/** Плитка «добавить» в конце списка сущностей: пунктир отличает её от данных. */
+function AddButton({
+  label,
+  onClick,
+  pill = false,
+}: {
+  label: string;
+  onClick: () => void;
+  pill?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        haptics.selection();
+        onClick();
+      }}
+      className={cn(
+        'flex min-h-11 items-center justify-center gap-2 border border-dashed border-hairline-strong',
+        'px-4 text-sm text-ink-muted transition-colors duration-[var(--duration-fast)] active:bg-hairline',
+        pill ? 'rounded-full' : 'w-full rounded-2xl py-3',
+      )}
+    >
+      <Plus size={16} strokeWidth={2} aria-hidden="true" />
+      {label}
+    </button>
   );
 }
 

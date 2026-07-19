@@ -2,6 +2,7 @@ import type { Category } from '@budget/shared';
 import { pool } from '../../config/db.js';
 import type { Queryable } from '../../shared/db-types.js';
 import { NotFoundError } from '../../shared/errors.js';
+import { asDuplicateError } from '../../shared/pg-errors.js';
 
 interface CategoryRow {
   id: string;
@@ -34,6 +35,35 @@ export const categoriesRepository = {
       [userId, kind ?? null],
     );
     return rows.map(toCategory);
+  },
+
+  async countByKind(userId: string, kind: 'income' | 'expense'): Promise<number> {
+    const { rows } = await pool.query<{ count: string }>(
+      'SELECT count(*) FROM categories WHERE user_id = $1 AND kind = $2',
+      [userId, kind],
+    );
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  async create(
+    userId: string,
+    input: { name: string; kind: 'income' | 'expense'; icon: string | null; color: string | null },
+  ): Promise<Category> {
+    try {
+      const { rows } = await pool.query<CategoryRow>(
+        `INSERT INTO categories (user_id, name, kind, icon, color)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [userId, input.name, input.kind, input.icon, input.color],
+      );
+      return toCategory(rows[0]!);
+    } catch (err) {
+      throw asDuplicateError(
+        err,
+        input.kind === 'expense'
+          ? 'Категория с таким названием уже есть'
+          : 'Источник дохода с таким названием уже есть',
+      );
+    }
   },
 
   async findOwned(db: Queryable, userId: string, categoryId: string): Promise<Category> {

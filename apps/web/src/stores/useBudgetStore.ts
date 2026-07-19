@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Transaction, Wallet } from '@budget/shared';
+import type { CreateCategoryInput, CreateWalletInput, Transaction, Wallet } from '@budget/shared';
 import { walletApi } from '@/entities/wallet/api';
 import { categoryApi, type CategoryWithStats } from '@/entities/category/api';
 import { transactionApi } from '@/entities/transaction/api';
@@ -17,6 +17,8 @@ interface BudgetState {
   error: string | null;
 
   load: () => Promise<void>;
+  addWallet: (input: CreateWalletInput) => Promise<void>;
+  addCategory: (input: CreateCategoryInput) => Promise<void>;
   applyDndResult: (result: DndPatch) => void;
   applyEditResult: (result: DndPatch) => void;
   /** Удаление: транзакция уходит из ленты, баланс приходит из ответа,
@@ -55,6 +57,19 @@ export const useBudgetStore = create<BudgetState>((set) => ({
         error: err instanceof Error ? err.message : 'Не удалось загрузить данные',
       });
     }
+  },
+
+  // Созданное дописываем в конец списка, а не перезагружаем всё: порядок
+  // создания закрепляет за категорией цвет в аналитике, и полная перезагрузка
+  // ради одной записи заодно моргнула бы матрицей.
+  async addWallet(input) {
+    const wallet = await walletApi.create(input);
+    set((state) => ({ wallets: [...state.wallets, wallet] }));
+  },
+
+  async addCategory(input) {
+    const category = await categoryApi.create(input);
+    set((state) => ({ categories: [...state.categories, category] }));
   },
 
   applyDndResult({ transaction, walletBalance, categorySpent, categoryLimit, isOverdraft }) {

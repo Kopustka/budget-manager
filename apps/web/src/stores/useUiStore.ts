@@ -18,20 +18,45 @@ interface UiState {
   tab: Tab;
   toasts: Toast[];
   setSelectedDay: (day: string) => void;
+  /** Вернуть дату операции на сегодня — при открытии шторок записи. */
+  resetSelectedDay: () => void;
   setTab: (tab: Tab) => void;
+  /**
+   * Фильтр, с которым нужно открыть «Историю». Его выставляет шторка категории,
+   * а экран истории забирает и сбрасывает — иначе фильтр залипнет при следующем
+   * заходе на вкладку.
+   */
+  historyFilter: { categoryId: string } | null;
+  setHistoryFilter: (filter: { categoryId: string } | null) => void;
   notify: (message: string, tone?: Toast['tone']) => void;
   dismiss: (id: number) => void;
 }
 
 let toastId = 0;
 
+/**
+ * Сегодня в локальном времени пользователя. Через `toISOString()` считать
+ * нельзя: под утро в восточных поясах UTC-дата отстаёт на сутки, и календарь
+ * подсвечивал бы вчерашнее число как сегодняшнее.
+ */
+function todayKey(): string {
+  const now = new Date();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${m}-${d}`;
+}
+
 export const useUiStore = create<UiState>((set) => ({
-  selectedDay: new Date().toISOString().slice(0, 10),
+  selectedDay: todayKey(),
   tab: 'home',
   toasts: [],
 
+
   setSelectedDay: (selectedDay) => set({ selectedDay }),
+  resetSelectedDay: () => set({ selectedDay: todayKey() }),
   setTab: (tab) => set({ tab }),
+  historyFilter: null,
+  setHistoryFilter: (historyFilter) => set({ historyFilter }),
 
   notify: (message, tone = 'info') => {
     const id = ++toastId;

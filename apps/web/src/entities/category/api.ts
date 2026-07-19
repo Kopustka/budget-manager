@@ -1,4 +1,4 @@
-import type { Category } from '@budget/shared';
+import type { Category, CreateCategoryInput } from '@budget/shared';
 import { api } from '@/shared/api/client';
 
 /** Категория вместе с прогрессом по лимиту — то, что рисует матрица. */
@@ -15,6 +15,8 @@ export const categoryApi = {
         `/categories${period ? `?period=${period}` : ''}`,
       )
       .then((r) => r.items),
+
+  create: (input: CreateCategoryInput) => api.post<CategoryWithStats>('/categories', input),
 
   setLimit: (categoryId: string, period: string, limitAmount: number) =>
     api.put(`/categories/${categoryId}/limit`, { period, limitAmount }),

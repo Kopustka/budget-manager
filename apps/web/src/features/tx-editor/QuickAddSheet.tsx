@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BottomSheet } from '@/shared/ui/BottomSheet';
+import { DayPicker } from '@/features/day-picker/DayPicker';
 import { CategoryIcon } from '@/shared/ui/CategoryIcon';
 import { Money } from '@/shared/ui/Money';
 import { useBudgetStore } from '@/stores/useBudgetStore';
@@ -16,12 +17,19 @@ import { cn } from '@/shared/ui/cn';
  * (жест мышью/пальцем невозможен при работе с клавиатуры или скринридером).
  */
 export function QuickAddSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { wallets, categories } = useBudgetStore();
+  const { wallets, categories, transactions } = useBudgetStore();
   const openOperation = useDndStore((s) => s.openOperation);
   const selectedDay = useUiStore((s) => s.selectedDay);
+  const resetSelectedDay = useUiStore((s) => s.resetSelectedDay);
 
   const [kind, setKind] = useState<'income' | 'expense'>('expense');
   const [walletId, setWalletId] = useState<string | null>(null);
+
+  // Дата живёт между открытиями шторки, поэтому при каждом входе возвращаем
+  // сегодня: иначе вчерашний выбор молча припишет операцию к прошлому дню.
+  useEffect(() => {
+    if (open) resetSelectedDay();
+  }, [open, resetSelectedDay]);
 
   if (!open) return null;
 
@@ -43,6 +51,12 @@ export function QuickAddSheet({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <BottomSheet open title={`Операция за ${formatRelativeDay(occurredAtFor(selectedDay))}`} onClose={onClose}>
+      {/* Календарь здесь, а не на главной: дата нужна ровно в момент записи */}
+      <div className="pb-4">
+        <p className="pb-2 text-sm text-ink-muted">Дата</p>
+        <DayPicker transactions={transactions} />
+      </div>
+
       {/* Сегмент-переключатель типа: сразу видно обе опции, не нужен выпадающий список */}
       <div className="flex gap-1 rounded-2xl bg-hairline p-1" role="tablist">
         {(['expense', 'income'] as const).map((value) => (

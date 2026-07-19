@@ -2,6 +2,7 @@ import type { Wallet } from '@budget/shared';
 import { pool } from '../../config/db.js';
 import type { Queryable } from '../../shared/db-types.js';
 import { NotFoundError } from '../../shared/errors.js';
+import { asDuplicateError } from '../../shared/pg-errors.js';
 
 interface WalletRow {
   id: string;
@@ -30,6 +31,36 @@ export const walletsRepository = {
       [userId],
     );
     return rows.map(toWallet);
+  },
+
+  async countByUser(userId: string): Promise<number> {
+    const { rows } = await pool.query<{ count: string }>(
+      'SELECT count(*) FROM wallets WHERE user_id = $1',
+      [userId],
+    );
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  /**
+   * Создание кошелька. Валюту не спрашиваем: суммы хранятся в минорных
+   * единицах валюты пользователя, разные валюты в одном балансе не сложатся.
+   */
+  async create(
+    userId: string,
+    name: string,
+    balance: number,
+    currency: string,
+  ): Promise<Wallet> {
+    try {
+      const { rows } = await pool.query<WalletRow>(
+        `INSERT INTO wallets (user_id, name, balance, currency)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [userId, name, balance, currency],
+      );
+      return toWallet(rows[0]!);
+    } catch (err) {
+      throw asDuplicateError(err, 'Кошелёк с таким названием уже есть');
+    }
   },
 
   /**

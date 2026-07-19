@@ -8,6 +8,7 @@ export interface CurrencyInfo {
 
 export const CURRENCIES: readonly CurrencyInfo[] = [
   { code: 'RUB', name: 'Российский рубль', symbol: '₽' },
+  { code: 'BYN', name: 'Белорусский рубль', symbol: 'Br' },
   { code: 'USD', name: 'Доллар США', symbol: '$' },
   { code: 'EUR', name: 'Евро', symbol: '€' },
   { code: 'KZT', name: 'Казахстанский тенге', symbol: '₸' },

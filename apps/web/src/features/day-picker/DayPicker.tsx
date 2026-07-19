@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { Plus } from 'lucide-react';
 import type { Transaction } from '@budget/shared';
 import { useUiStore } from '@/stores/useUiStore';
 import { haptics } from '@/shared/lib/telegram';
@@ -10,17 +9,19 @@ import { cn } from '@/shared/ui/cn';
 const DAYS = 30;
 const WEEKDAY = new Intl.DateTimeFormat('ru-RU', { weekday: 'short' });
 
-interface TimeCarouselProps {
+interface DayPickerProps {
+  /** Лента операций: под числом показываем расход за день. */
   transactions: Transaction[];
-  /** Кнопка «+»: добавить операцию за выбранный день, в том числе задним числом. */
-  onQuickAdd: () => void;
 }
 
 /**
- * Карусель времени: 30 дней назад. Выбранный день определяет, что показывает
- * лента и какой датой запишется новая операция.
+ * Выбор даты операции: 30 дней назад. Живёт внутри шторок записи — на главном
+ * экране календарь занимал первый экран, хотя нужен только в момент ввода.
+ *
+ * Выбранный день хранится в `useUiStore`, потому что шторка подтверждения
+ * суммы открывается отдельно от той, где дату выбрали.
  */
-export function TimeCarousel({ transactions, onQuickAdd }: TimeCarouselProps) {
+export function DayPicker({ transactions }: DayPickerProps) {
   const selectedDay = useUiStore((s) => s.selectedDay);
   const setSelectedDay = useUiStore((s) => s.setSelectedDay);
   const currency = useCurrency();
@@ -55,10 +56,10 @@ export function TimeCarousel({ transactions, onQuickAdd }: TimeCarouselProps) {
   const todayKey = localDayKey(new Date());
 
   return (
-    <div className="flex items-end gap-2 pb-4">
+    <div className="pb-1">
       <div
         ref={scrollerRef}
-        className="flex flex-1 gap-2 overflow-x-auto scroll-smooth pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex gap-2 overflow-x-auto scroll-smooth pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {days.map((date) => {
           const key = localDayKey(date);
@@ -100,18 +101,6 @@ export function TimeCarousel({ transactions, onQuickAdd }: TimeCarouselProps) {
           );
         })}
       </div>
-
-      <button
-        type="button"
-        onClick={() => {
-          haptics.impact('medium');
-          onQuickAdd();
-        }}
-        aria-label="Добавить операцию за выбранный день"
-        className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-brand text-brand-ink transition-transform duration-[var(--duration-fast)] active:scale-95"
-      >
-        <Plus size={24} strokeWidth={2} aria-hidden="true" />
-      </button>
     </div>
   );
 }
