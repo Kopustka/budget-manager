@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
-    "smoke": "tsx src/scripts/smoke-dnd.ts"
+    "smoke": "tsx src/scripts/smoke-dnd.ts",
+    "dev-init-data": "tsx src/scripts/dev-init-data.ts"
   },
   "dependencies": {
     "@budget/shared": "*",
