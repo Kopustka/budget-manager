@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+.npm/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# env & secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+logs/
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# vite / cache
+.vite/
+coverage/
