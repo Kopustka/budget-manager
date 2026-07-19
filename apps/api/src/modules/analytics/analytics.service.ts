@@ -1,16 +1,28 @@
-import type { DistributionResponse, VelocityResponse, VelocityPoint } from '@budget/shared';
+import type {
+  DistributionResponse,
+  User,
+  VelocityResponse,
+  VelocityPoint,
+} from '@budget/shared';
 import { pool } from '../../config/db.js';
 import { categoriesRepository } from '../categories/categories.repository.js';
 import { transactionsRepository } from '../transactions/transactions.repository.js';
-import { assertPeriod, daysInPeriod, periodOf, periodRange } from '../../shared/period.js';
+import {
+  assertPeriod,
+  dayIndexInPeriod,
+  daysInPeriod,
+  periodOf,
+  periodRange,
+} from '../../shared/period.js';
 
 /** Аналитика периода. Читает из PostgreSQL — точные цифры важнее миллисекунд. */
 export const analyticsService = {
   /** Распределение трат по категориям за период (donut). */
-  async distribution(userId: string, period: string): Promise<DistributionResponse> {
+  async distribution(user: User, period: string): Promise<DistributionResponse> {
     assertPeriod(period);
+    const userId = user.id;
     const [rows, categories] = await Promise.all([
-      transactionsRepository.spentByCategory(userId, period),
+      transactionsRepository.spentByCategory(userId, period, user.monthStartDay),
       categoriesRepository.listByUser(userId, 'expense'),
     ]);
     const byId = new Map(categories.map((c) => [c.id, c]));
@@ -45,10 +57,11 @@ export const analyticsService = {
    * Velocity: факт нарастающим итогом против идеальной равномерной кривой
    * (сумма лимитов, размазанная по дням периода).
    */
-  async velocity(userId: string, period: string): Promise<VelocityResponse> {
+  async velocity(user: User, period: string): Promise<VelocityResponse> {
     assertPeriod(period);
+    const userId = user.id;
     const [daily, budgetRow] = await Promise.all([
-      transactionsRepository.spentByDay(userId, period),
+      transactionsRepository.spentByDay(userId, period, user.monthStartDay),
       pool.query<{ total: string | null }>(
         `SELECT COALESCE(SUM(cl.limit_amount), 0) AS total
            FROM category_limits cl
@@ -60,9 +73,9 @@ export const analyticsService = {
 
     const budgetRaw = Number(budgetRow.rows[0]?.total ?? 0);
     const budget = budgetRaw > 0 ? budgetRaw : null;
-    const days = daysInPeriod(period);
+    const days = daysInPeriod(period, user.monthStartDay);
     const spentByDay = new Map(daily.map((d) => [d.day, d.total]));
-    const { start } = periodRange(period);
+    const { start } = periodRange(period, user.monthStartDay);
 
     const points: VelocityPoint[] = [];
     let cumulative = 0;
@@ -80,9 +93,13 @@ export const analyticsService = {
     }
 
     // Опережение считаем на сегодня, если период текущий; иначе — на конец периода.
+    // Номер дня берём от начала периода: при сдвинутом дне начала календарное
+    // число месяца уже не совпадает с позицией внутри периода.
     const now = new Date();
     const index =
-      periodOf(now) === period ? Math.min(now.getUTCDate() - 1, days - 1) : days - 1;
+      periodOf(now, user.monthStartDay) === period
+        ? Math.min(dayIndexInPeriod(now, period, user.monthStartDay), days - 1)
+        : days - 1;
     const at = points[index];
     const pace = at ? at.cumulative - at.ideal : 0;
 

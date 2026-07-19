@@ -1,4 +1,4 @@
-import type { Transaction, TransactionType } from '@budget/shared';
+import type { HistoryTotals, Transaction, TransactionType } from '@budget/shared';
 import { pool } from '../../config/db.js';
 import type { Queryable } from '../../shared/db-types.js';
 import { NotFoundError } from '../../shared/errors.js';
@@ -30,6 +30,16 @@ function toTx(r: TxRow): Transaction {
     occurredAt: r.occurred_at.toISOString(),
     createdAt: r.created_at.toISOString(),
   };
+}
+
+/** Параметры выборки истории: диапазон и необязательные фильтры. */
+export interface HistoryQuery {
+  userId: string;
+  from?: Date | string | null;
+  to?: Date | string | null;
+  type?: TransactionType | null;
+  categoryId?: string | null;
+  limit?: number;
 }
 
 export interface InsertTxInput {
@@ -130,6 +140,62 @@ export const transactionsRepository = {
   },
 
   /**
+   * Лента истории с фильтрами. Диапазон и сортировка ложатся на индекс
+   * idx_tx_user_time, поэтому фильтры добавлены как необязательные условия,
+   * а не как отдельные запросы.
+   */
+  async listRange(input: HistoryQuery): Promise<Transaction[]> {
+    const { rows } = await pool.query<TxRow>(
+      `SELECT * FROM transactions
+        WHERE user_id = $1
+          AND ($2::timestamptz IS NULL OR occurred_at >= $2)
+          AND ($3::timestamptz IS NULL OR occurred_at < $3)
+          AND ($4::text IS NULL OR type = $4)
+          AND ($5::uuid IS NULL OR category_id = $5)
+        ORDER BY occurred_at DESC
+        LIMIT $6`,
+      [
+        input.userId,
+        input.from ?? null,
+        input.to ?? null,
+        input.type ?? null,
+        input.categoryId ?? null,
+        input.limit ?? 500,
+      ],
+    );
+    return rows.map(toTx);
+  },
+
+  /** Итоги за тот же отрезок и с теми же фильтрами, что и лента. */
+  async totalsRange(input: HistoryQuery): Promise<HistoryTotals> {
+    const { rows } = await pool.query<{ income: string; expense: string; count: string }>(
+      `SELECT
+         COALESCE(SUM(amount) FILTER (WHERE type = 'deposit'), 0) AS income,
+         COALESCE(SUM(amount) FILTER (WHERE type = 'spend'), 0)   AS expense,
+         COUNT(*)                                                  AS count
+        FROM transactions
+       WHERE user_id = $1
+         AND ($2::timestamptz IS NULL OR occurred_at >= $2)
+         AND ($3::timestamptz IS NULL OR occurred_at < $3)
+         AND ($4::text IS NULL OR type = $4)
+         AND ($5::uuid IS NULL OR category_id = $5)`,
+      [
+        input.userId,
+        input.from ?? null,
+        input.to ?? null,
+        input.type ?? null,
+        input.categoryId ?? null,
+      ],
+    );
+    const row = rows[0];
+    return {
+      income: Number(row?.income ?? 0),
+      expense: Number(row?.expense ?? 0),
+      count: Number(row?.count ?? 0),
+    };
+  },
+
+  /**
    * Сумма трат по категории за период — источник истины для пересчёта Redis-кэша
    * spent после любой операции (создание/правка/удаление).
    */
@@ -138,8 +204,9 @@ export const transactionsRepository = {
     userId: string,
     categoryId: string,
     period: string,
+    monthStartDay = 1,
   ): Promise<number> {
-    const { start, end } = periodRange(period);
+    const { start, end } = periodRange(period, monthStartDay);
     const { rows } = await db.query<{ total: string | null }>(
       `SELECT COALESCE(SUM(amount), 0) AS total
          FROM transactions
@@ -154,8 +221,9 @@ export const transactionsRepository = {
   async spentByCategory(
     userId: string,
     period: string,
+    monthStartDay = 1,
   ): Promise<Array<{ categoryId: string; total: number }>> {
-    const { start, end } = periodRange(period);
+    const { start, end } = periodRange(period, monthStartDay);
     const { rows } = await pool.query<{ category_id: string; total: string }>(
       `SELECT category_id, SUM(amount) AS total
          FROM transactions
@@ -172,8 +240,9 @@ export const transactionsRepository = {
   async spentByDay(
     userId: string,
     period: string,
+    monthStartDay = 1,
   ): Promise<Array<{ day: string; total: number }>> {
-    const { start, end } = periodRange(period);
+    const { start, end } = periodRange(period, monthStartDay);
     const { rows } = await pool.query<{ day: string; total: string }>(
       `SELECT to_char(date_trunc('day', occurred_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
               SUM(amount) AS total

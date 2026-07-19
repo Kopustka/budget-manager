@@ -1,7 +1,8 @@
 import { env } from '../config/env.js';
 import { pool } from '../config/db.js';
 import { redis } from '../config/redis.js';
-import { rkey, currentPeriod } from '../redis/keys.js';
+import { rkey } from '../redis/keys.js';
+import { periodOf } from '../shared/period.js';
 import { usersRepository } from '../modules/users/users.repository.js';
 import { transactionsService } from '../modules/transactions/transactions.service.js';
 import { alertsQueue } from '../modules/alerts/alerts.queue.js';
@@ -37,7 +38,7 @@ async function main(): Promise<void> {
   const user = await usersRepository.upsertByTelegram({ telegramId: TEST_TELEGRAM_ID });
   await resetUser(user.id);
 
-  const period = currentPeriod();
+  const period = periodOf(new Date());
   const { rows: wallets } = await pool.query<{ id: string }>(
     'SELECT id FROM wallets WHERE user_id = $1 LIMIT 1',
     [user.id],

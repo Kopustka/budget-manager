@@ -53,9 +53,16 @@ async function resyncFromDb(
   walletId: string,
   categoryId: string,
   period: string,
+  monthStartDay: number,
 ): Promise<void> {
   const wallet = await walletsRepository.findOwned(pool, userId, walletId);
-  const spent = await transactionsRepository.sumSpent(pool, userId, categoryId, period);
+  const spent = await transactionsRepository.sumSpent(
+    pool,
+    userId,
+    categoryId,
+    period,
+    monthStartDay,
+  );
   const pipe = redis.pipeline();
   cache.setWalletBalance(userId, walletId, wallet.balance, pipe);
   cache.setSpent(userId, period, categoryId, spent, pipe);
@@ -91,7 +98,7 @@ export const transactionsService = {
     if (Number.isNaN(occurredAt.getTime())) {
       throw new ValidationError('Некорректная дата операции');
     }
-    const period = periodOf(occurredAt);
+    const period = periodOf(occurredAt, user.monthStartDay);
     const action = matrix.action;
 
     const { outcome, ops, categoryName } = await withTransaction(async (client) => {
@@ -125,7 +132,13 @@ export const transactionsService = {
       // spent считаем из PG (уже с учётом вставленной строки) — кэш не дрейфует.
       const spent =
         action === 'spend'
-          ? await transactionsRepository.sumSpent(client, user.id, category.id, period)
+          ? await transactionsRepository.sumSpent(
+              client,
+              user.id,
+              category.id,
+              period,
+              user.monthStartDay,
+            )
           : 0;
       const limit = action === 'spend' ? await limitFor(client, user.id, category.id, period) : null;
 
@@ -154,7 +167,7 @@ export const transactionsService = {
     });
 
     await flushCache(ops, () =>
-      resyncFromDb(user.id, input.walletId, input.categoryId, period),
+      resyncFromDb(user.id, input.walletId, input.categoryId, period, user.monthStartDay),
     );
 
     // Уведомления — побочный эффект: их сбой не должен ронять уже проведённую операцию.
@@ -213,7 +226,7 @@ export const transactionsService = {
           comment: input.comment === undefined ? old.comment : input.comment ?? null,
         });
 
-        const p = periodOf(new Date(old.occurredAt));
+        const p = periodOf(new Date(old.occurredAt), user.monthStartDay);
         // Категория могла смениться — пересчитываем обе.
         const touched = new Set<string>([newCategoryId]);
         if (old.categoryId) touched.add(old.categoryId);
@@ -223,7 +236,7 @@ export const transactionsService = {
           for (const id of touched) {
             spentByCategory.set(
               id,
-              await transactionsRepository.sumSpent(client, user.id, id, p),
+              await transactionsRepository.sumSpent(client, user.id, id, p, user.monthStartDay),
             );
           }
         }
@@ -252,7 +265,9 @@ export const transactionsService = {
     );
 
     await flushCache(ops, async () => {
-      for (const id of categoryIds) await resyncFromDb(user.id, walletId, id, period);
+      for (const id of categoryIds) {
+        await resyncFromDb(user.id, walletId, id, period, user.monthStartDay);
+      }
     });
     return outcome;
   },
@@ -274,10 +289,16 @@ export const transactionsService = {
         const newBalance = await walletsRepository.applyDelta(client, wallet.id, delta);
         await transactionsRepository.remove(client, old.id);
 
-        const p = periodOf(new Date(old.occurredAt));
+        const p = periodOf(new Date(old.occurredAt), user.monthStartDay);
         const spent =
           old.type === 'spend' && old.categoryId
-            ? await transactionsRepository.sumSpent(client, user.id, old.categoryId, p)
+            ? await transactionsRepository.sumSpent(
+                client,
+                user.id,
+                old.categoryId,
+                p,
+                user.monthStartDay,
+              )
             : null;
 
         return {
@@ -297,7 +318,7 @@ export const transactionsService = {
     );
 
     await flushCache(ops, async () => {
-      if (categoryId) await resyncFromDb(user.id, walletId, categoryId, period);
+      if (categoryId) await resyncFromDb(user.id, walletId, categoryId, period, user.monthStartDay);
     });
     return { walletBalance: balance };
   },

@@ -1,7 +1,7 @@
 import { pool } from '../config/db.js';
 import { redis } from '../config/redis.js';
 import { cache } from '../redis/cache.js';
-import { currentPeriod } from '../redis/keys.js';
+import { periodOf } from '../shared/period.js';
 import { usersRepository } from '../modules/users/users.repository.js';
 
 /**
@@ -60,7 +60,7 @@ async function seed(): Promise<void> {
     expenseIds.push(rows[0]!.id);
   }
 
-  const period = currentPeriod();
+  const period = periodOf(new Date());
   // Лимит на «Продукты» 20 000.00 = 2_000_000
   const groceriesLimit = 2_000_000;
   await pool.query(

@@ -4,6 +4,7 @@ import type { Transaction } from '@budget/shared';
 import { useUiStore } from '@/stores/useUiStore';
 import { haptics } from '@/shared/lib/telegram';
 import { formatMoneyCompact } from '@/shared/lib/format';
+import { useCurrency } from '@/shared/lib/useCurrency';
 import { cn } from '@/shared/ui/cn';
 
 const DAYS = 30;
@@ -22,6 +23,7 @@ interface TimeCarouselProps {
 export function TimeCarousel({ transactions, onQuickAdd }: TimeCarouselProps) {
   const selectedDay = useUiStore((s) => s.selectedDay);
   const setSelectedDay = useUiStore((s) => s.setSelectedDay);
+  const currency = useCurrency();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const todayRef = useRef<HTMLButtonElement>(null);
 
@@ -70,7 +72,7 @@ export function TimeCarousel({ transactions, onQuickAdd }: TimeCarouselProps) {
               ref={isToday ? todayRef : undefined}
               type="button"
               aria-pressed={active}
-              aria-label={`${date.getDate()} ${WEEKDAY.format(date)}${spent ? `, расход ${formatMoneyCompact(spent)}` : ''}`}
+              aria-label={`${date.getDate()} ${WEEKDAY.format(date)}${spent ? `, расход ${formatMoneyCompact(spent, currency)}` : ''}`}
               onClick={() => {
                 haptics.selection();
                 setSelectedDay(key);
@@ -92,7 +94,7 @@ export function TimeCarousel({ transactions, onQuickAdd }: TimeCarouselProps) {
                   active ? 'opacity-80' : spent ? 'text-ink-muted' : 'text-transparent',
                 )}
               >
-                {spent ? formatMoneyCompact(spent) : '·'}
+                {spent ? formatMoneyCompact(spent, currency) : '·'}
               </span>
             </button>
           );

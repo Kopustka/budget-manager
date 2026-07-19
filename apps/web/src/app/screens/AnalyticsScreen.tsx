@@ -8,6 +8,7 @@ import { Money } from '@/shared/ui/Money';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { Button } from '@/shared/ui/Button';
 import { formatMoney, formatPercent } from '@/shared/lib/format';
+import { useCurrency } from '@/shared/lib/useCurrency';
 import { haptics } from '@/shared/lib/telegram';
 import { DonutChart, type DonutSlice } from '@/features/analytics/DonutChart';
 import { VelocityChart } from '@/features/analytics/VelocityChart';
@@ -210,6 +211,7 @@ export function AnalyticsScreen() {
 
 /** Тот же набор данных числами: доступен скринридеру и снимает вопрос «сколько точно». */
 function DistributionTable({ items, total }: { items: DonutSlice[]; total: number }) {
+  const currency = useCurrency();
   if (total <= 0) {
     return <p className="py-6 text-center text-sm text-ink-faint">Трат за месяц нет</p>;
   }
@@ -243,7 +245,7 @@ function DistributionTable({ items, total }: { items: DonutSlice[]; total: numbe
                   <span className="truncate">{item.name}</span>
                 </span>
               </th>
-              <td className="tabular py-2 text-right">{formatMoney(item.value)}</td>
+              <td className="tabular py-2 text-right">{formatMoney(item.value, currency)}</td>
               <td className="tabular py-2 text-right text-ink-muted">
                 {formatPercent(item.value / total)}
               </td>
@@ -253,7 +255,7 @@ function DistributionTable({ items, total }: { items: DonutSlice[]; total: numbe
             <th scope="row" className="py-2 text-left">
               Итого
             </th>
-            <td className="tabular py-2 text-right">{formatMoney(total)}</td>
+            <td className="tabular py-2 text-right">{formatMoney(total, currency)}</td>
             <td className="tabular py-2 text-right text-ink-muted">100 %</td>
           </tr>
         </tbody>
