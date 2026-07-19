@@ -12,6 +12,7 @@ import { redis } from '../../config/redis.js';
 import { cache } from '../../redis/cache.js';
 import { ConflictError, ForbiddenError, ValidationError } from '../../shared/errors.js';
 import { periodOf } from '../../shared/period.js';
+import { alertsService } from '../alerts/alerts.service.js';
 import { walletsRepository } from '../wallets/wallets.repository.js';
 import { categoriesRepository } from '../categories/categories.repository.js';
 import { transactionsRepository } from './transactions.repository.js';
@@ -93,7 +94,7 @@ export const transactionsService = {
     const period = periodOf(occurredAt);
     const action = matrix.action;
 
-    const { outcome, ops } = await withTransaction(async (client) => {
+    const { outcome, ops, categoryName } = await withTransaction(async (client) => {
       const wallet = await walletsRepository.findOwned(client, user.id, input.walletId, true);
       const category = await categoriesRepository.findOwned(client, user.id, input.categoryId);
 
@@ -132,6 +133,9 @@ export const transactionsService = {
       const nowUnix = Math.floor(Date.now() / 1000);
 
       return {
+        // Имя категории нужно тексту уведомления — вытаскиваем из транзакции,
+        // чтобы потом не ходить в БД второй раз.
+        categoryName: category.name,
         outcome: {
           transactionId: tx.id,
           transaction: tx,
@@ -152,6 +156,22 @@ export const transactionsService = {
     await flushCache(ops, () =>
       resyncFromDb(user.id, input.walletId, input.categoryId, period),
     );
+
+    // Уведомления — побочный эффект: их сбой не должен ронять уже проведённую операцию.
+    if (action === 'spend') {
+      await alertsService
+        .evaluateAfterSpend({
+          user,
+          categoryId: input.categoryId,
+          categoryName,
+          spent: outcome.categorySpent,
+          limit: outcome.categoryLimit,
+          period,
+          occurredAt,
+        })
+        .catch(() => undefined);
+    }
+
     return outcome;
   },
 

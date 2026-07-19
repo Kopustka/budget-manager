@@ -22,6 +22,14 @@ export const rkey = {
 
   /** ZSET: очередь отложенных пушей. score = timestamp отправки */
   botAlertsScheduled: 'finapp:queue:bot_alerts:scheduled',
+
+  /**
+   * Ключ-дедупликатор пуша: пока он жив, повторный алерт того же вида
+   * не ставится в очередь. Без него достижение лимита слало бы уведомление
+   * на каждую следующую трату по категории.
+   */
+  alertOnce: (userId: string, kind: string, scope: string) =>
+    `finapp:user:${userId}:alert:${kind}:${scope}`,
 } as const;
 
 /** Текущий период в формате YYYY-MM (UTC). */
