@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   CreatePlannedInput,
+  UpdatePlannedInput,
   PlannedOccurrence,
   PlannedSummary,
   PlannedTransaction,
@@ -24,7 +25,7 @@ interface PlannedState {
 
   load: () => Promise<void>;
   create: (input: CreatePlannedInput) => Promise<void>;
-  update: (id: string, input: { name?: string; amount?: number }) => Promise<void>;
+  update: (id: string, input: UpdatePlannedInput) => Promise<void>;
   remove: (id: string) => Promise<void>;
   confirm: (id: string, dueDate: string) => Promise<void>;
   skip: (id: string, dueDate: string) => Promise<void>;

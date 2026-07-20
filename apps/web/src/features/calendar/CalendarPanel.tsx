@@ -37,6 +37,8 @@ export function CalendarPanel() {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  /** Какое правило открыть на правке; null — форма создания. */
+  const [editId, setEditId] = useState<string | null>(null);
 
   useEffect(() => {
     void load();
@@ -187,13 +189,24 @@ export function CalendarPanel() {
                               : 'border-dashed border-hairline-strong bg-transparent',
                           )}
                         >
-                          <div className="flex items-center gap-2">
+                          {/* Тап по событию открывает шторку правки: сумма
+                              подписки меняется чаще, чем заводится новая */}
+                          <button
+                            type="button"
+                            aria-label={`Изменить событие ${o.name}`}
+                            onClick={() => {
+                              haptics.selection();
+                              setEditId(o.plannedId);
+                              setEditorOpen(true);
+                            }}
+                            className="flex w-full items-center gap-2 text-left"
+                          >
                             <CategoryIcon name={category?.icon ?? null} color={category?.color} size={16} />
                             <span className="min-w-0 flex-1 truncate text-sm font-medium">
                               {o.name}
                             </span>
                             <Money value={o.amount} className="text-sm font-semibold" />
-                          </div>
+                          </button>
                           <p className="pt-1 text-[11px] text-ink-faint">
                             {o.status === 'paid'
                               ? 'Оплачено'
@@ -238,6 +251,7 @@ export function CalendarPanel() {
               type="button"
               onClick={() => {
                 haptics.selection();
+                setEditId(null);
                 setEditorOpen(true);
               }}
               className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-hairline-strong text-sm text-ink-muted transition-colors duration-[var(--duration-fast)] active:bg-hairline"
@@ -249,7 +263,14 @@ export function CalendarPanel() {
         )}
       </GlassCard>
 
-      <PlannedSheet open={editorOpen} onClose={() => setEditorOpen(false)} />
+      <PlannedSheet
+        open={editorOpen}
+        editId={editId}
+        onClose={() => {
+          setEditorOpen(false);
+          setEditId(null);
+        }}
+      />
     </section>
   );
 }
