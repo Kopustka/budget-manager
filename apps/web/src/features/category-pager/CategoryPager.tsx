@@ -104,6 +104,9 @@ export function CategoryPager<T>({
         }}
         className={cn(
           'flex overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+          // Свайп за край карусели не должен уходить выше по дереву: без этого
+          // WebView подхватывает жест и панорамирует весь экран вбок.
+          'overscroll-x-contain',
           dragging ? 'cursor-grabbing select-none' : 'snap-x snap-mandatory',
         )}
       >
