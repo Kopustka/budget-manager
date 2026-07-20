@@ -82,3 +82,44 @@ export interface Transaction {
   occurredAt: string;
   createdAt: string;
 }
+
+/** Как часто повторяется планируемая трата. */
+export type PlannedRecurrence = 'once' | 'monthly';
+
+/** Решение по конкретной дате события. */
+export type PlannedStatus = 'pending' | 'paid' | 'skipped';
+
+/**
+ * Правило планируемой траты: аренда, подписка, абонемент.
+ * Конкретные даты списаний из него разворачиваются на лету.
+ */
+export interface PlannedTransaction {
+  id: UUID;
+  profileId: UUID;
+  categoryId: UUID | null;
+  walletId: UUID | null;
+  name: string;
+  amount: MinorAmount;
+  recurrence: PlannedRecurrence;
+  /** Для разового события — точная дата, YYYY-MM-DD. */
+  dueDate: string | null;
+  /** Для ежемесячного — число месяца (1–28). */
+  dueDay: number | null;
+  active: boolean;
+  createdAt: string;
+}
+
+/** Конкретное списание по правилу в конкретный день. */
+export interface PlannedOccurrence {
+  plannedId: UUID;
+  name: string;
+  amount: MinorAmount;
+  categoryId: UUID | null;
+  walletId: UUID | null;
+  /** Дата списания, YYYY-MM-DD. */
+  dueDate: string;
+  status: PlannedStatus;
+  /** Факт, родившийся из подтверждения. */
+  transactionId: UUID | null;
+  recurrence: PlannedRecurrence;
+}

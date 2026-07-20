@@ -60,4 +60,19 @@ export interface DailyDigestAlert extends AlertBase {
   noSpendStreak?: number;
 }
 
-export type BotAlert = LimitReachedAlert | OverdraftAlert | FastPaceAlert | DailyDigestAlert;
+/** Завтра списание по календарю обязательств. */
+export interface PlannedDueAlert extends AlertBase {
+  kind: 'planned_due';
+  /** Название события: «VPN», «Аренда». */
+  name: string;
+  amount: number;
+  /** Дата списания, YYYY-MM-DD. */
+  dueDate: string;
+}
+
+export type BotAlert =
+  | LimitReachedAlert
+  | OverdraftAlert
+  | FastPaceAlert
+  | DailyDigestAlert
+  | PlannedDueAlert;

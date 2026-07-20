@@ -5,6 +5,7 @@ import { rkey } from '../../redis/keys.js';
 import { scripts } from '../../redis/scripts.js';
 import { dayIndexInPeriod, daysInPeriod, periodOf, periodRange } from '../../shared/period.js';
 import { analyticsService } from '../analytics/analytics.service.js';
+import { plannedService } from '../planned/planned.service.js';
 import { alertsQueue, pushOnce } from './alerts.queue.js';
 import type {
   AlertBase,
@@ -167,6 +168,63 @@ export const alertsService = {
       if (ok) scheduled += 1;
     }
     return scheduled;
+  },
+
+  /**
+   * Предупредить о завтрашних списаниях из календаря.
+   *
+   * Только неподтверждённые: если человек уже отметил оплату, напоминать не о
+   * чем. Дедупликация по дате и событию — одно предупреждение на списание.
+   */
+  async schedulePlannedDue(now: Date = new Date()): Promise<number> {
+    const tomorrow = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
+    );
+    const dayKey = tomorrow.toISOString().slice(0, 10);
+
+    const { rows } = await pool.query<{
+      id: string;
+      telegram_id: string;
+      currency: string;
+      month_start_day: number;
+    }>(
+      `SELECT p.id, u.telegram_id, p.currency, p.month_start_day
+         FROM users u
+         JOIN profiles p ON p.id = u.active_profile_id`,
+    );
+
+    let queued = 0;
+    for (const row of rows) {
+      const scope = {
+        id: row.id,
+        telegramId: Number(row.telegram_id),
+        currency: row.currency,
+        monthStartDay: row.month_start_day,
+      } as ProfileScope;
+
+      const due = (await plannedService.occurrences(scope, tomorrow, 1)).filter(
+        (o) => o.status === 'pending',
+      );
+
+      for (const item of due) {
+        const ok = await pushOnce(
+          {
+            telegramId: scope.telegramId,
+            profileId: scope.id,
+            currency: scope.currency,
+            queuedAt: now.toISOString(),
+            kind: 'planned_due',
+            name: item.name,
+            amount: item.amount,
+            dueDate: item.dueDate,
+          },
+          `${dayKey}:${item.plannedId}`,
+          2 * DAY_SECONDS,
+        );
+        if (ok) queued += 1;
+      }
+    }
+    return queued;
   },
 
   /**

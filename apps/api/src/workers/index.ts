@@ -22,6 +22,12 @@ async function main(): Promise<void> {
   const send = telegramSender(bot);
 
   const scheduler = setInterval(() => {
+    void alertsService.schedulePlannedDue().then(
+      (count: number) => {
+        if (count > 0) console.log(`Предупреждений о списаниях: ${count}`);
+      },
+      (err: unknown) => console.error('Календарь:', err),
+    );
     void alertsService.scheduleDailyDigests().then(
       (count: number) => {
         if (count > 0) console.log(`Запланировано отчётов: ${count}`);
