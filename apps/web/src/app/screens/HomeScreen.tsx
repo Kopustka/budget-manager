@@ -16,8 +16,9 @@ import { Money } from '@/shared/ui/Money';
 import { CategoryIcon } from '@/shared/ui/CategoryIcon';
 import { Skeleton, SkeletonCard } from '@/shared/ui/Skeleton';
 import { Button } from '@/shared/ui/Button';
-import { formatDay, formatRelativeDay, formatTime } from '@/shared/lib/format';
+import { formatDay, formatMoney, formatRelativeDay, formatTime } from '@/shared/lib/format';
 import { haptics, isInsideTelegram } from '@/shared/lib/telegram';
+import { useCurrency } from '@/shared/lib/useCurrency';
 import { CategorySheet } from '@/features/category-details/CategorySheet';
 import { CategoryCard } from '@/features/category-card/CategoryCard';
 import { DragNode, DropNode } from '@/features/dnd-matrix/dnd-nodes';
@@ -44,6 +45,7 @@ export function HomeScreen() {
   const monthStartDay = useSettingsStore((s) => s.monthStartDay);
   const periodStart = useSettingsStore((s) => s.periodStart);
   const periodEnd = useSettingsStore((s) => s.periodEnd);
+  const currency = useCurrency();
 
   const [openCategory, setOpenCategory] = useState<CategoryWithStats | null>(null);
   const [editingCategory, setEditingCategory] = useState<CategoryWithStats | null>(null);
@@ -57,6 +59,16 @@ export function HomeScreen() {
   );
   const expenses = categories.filter((c) => c.kind === 'expense');
   const incomes = categories.filter((c) => c.kind === 'income');
+
+  /*
+   * Итог по расходам считаем по spent категорий, а не по ленте операций: лента
+   * на главной обрезана последними записями, а spent приходит с сервера уже за
+   * расчётный период — только он сходится с суммами на карточках.
+   */
+  const totalSpent = useMemo(
+    () => expenses.reduce((sum, c) => sum + (c.spent ?? 0), 0),
+    [expenses],
+  );
 
   // ru-locale добавляет «г.» — для заголовка это лишний шум, собираем метку сами.
   // При сдвинутом дне начала месяца календарное название соврало бы, поэтому
@@ -150,7 +162,12 @@ export function HomeScreen() {
         </div>
       </Section>
 
-      <Section title="Кошельки" hint="Цель зачисления и источник трат">
+      <Section
+        title="Кошельки"
+        hint="Цель зачисления и источник трат"
+        total={totalBalance}
+        totalLabel={`Всего на кошельках: ${formatMoney(totalBalance, currency)}`}
+      >
         {loading && wallets.length === 0 ? (
           <SkeletonCard />
         ) : (
@@ -181,7 +198,12 @@ export function HomeScreen() {
         )}
       </Section>
 
-      <Section title="Категории расходов" hint="Бросьте кошелёк на категорию, чтобы списать">
+      <Section
+        title="Категории расходов"
+        hint="Бросьте кошелёк на категорию, чтобы списать"
+        total={totalSpent}
+        totalLabel={`Потрачено за период: ${formatMoney(totalSpent, currency)}`}
+      >
         {loading && expenses.length === 0 ? (
           <div className="grid grid-cols-2 gap-3">
             <SkeletonCard />
@@ -346,17 +368,30 @@ function SummaryChip({
 function Section({
   title,
   hint,
+  total,
+  totalLabel,
   children,
 }: {
   title: string;
   hint?: string;
+  /** Итог по разделу в минорных единицах. Не передан — строка с суммой не рисуется. */
+  total?: number;
+  /** Что означает сумма — только для скринридера: рядом с заголовком голое число неоднозначно. */
+  totalLabel?: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="pb-6">
       {/* Подсказка — отдельной строкой: в одну строку с заголовком она обрезалась */}
       <div className="pb-2">
-        <h2 className="text-sm font-semibold text-ink-muted">{title}</h2>
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-ink-muted">{title}</h2>
+          {total !== undefined ? (
+            <span className="shrink-0" aria-label={totalLabel}>
+              <Money value={total} className="text-sm font-semibold" />
+            </span>
+          ) : null}
+        </div>
         {hint ? <p className="text-[11px] text-ink-faint">{hint}</p> : null}
       </div>
       {children}
