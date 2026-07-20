@@ -1,4 +1,5 @@
 import { alertsQueue } from '../modules/alerts/alerts.queue.js';
+import { alertsService } from '../modules/alerts/alerts.service.js';
 import { renderAlert } from '../bot/messages.js';
 import type { SendMessage } from '../bot/bot.js';
 
@@ -59,7 +60,10 @@ export async function runAlertsWorker(options: WorkerOptions): Promise<number> {
     }
 
     try {
-      await send(alert.telegramId, renderAlert(alert));
+      // Вечерний отчёт лежит в очереди без цифр: планировщик ставит его сильно
+      // заранее, и посчитанные тогда суммы к моменту отправки уже неверны.
+      const ready = await alertsService.hydrateAlert(alert);
+      await send(ready.telegramId, renderAlert(ready));
       delivered += 1;
     } catch (err) {
       // Пуш не критичен: логируем и идём дальше, чтобы одна недоставка

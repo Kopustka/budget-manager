@@ -16,6 +16,24 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
     );
   });
 
+  /** Прогноз исчерпания бюджета по среднему темпу трат. */
+  app.get<{ Querystring: { period?: string } }>('/analytics/forecast', async (req) => {
+    const profile = requireProfile(req);
+    return analyticsService.forecast(
+      profile,
+      req.query.period ?? periodOf(new Date(), profile.monthStartDay),
+    );
+  });
+
+  /** Дни без трат и серии. */
+  app.get<{ Querystring: { period?: string } }>('/analytics/no-spend', async (req) => {
+    const profile = requireProfile(req);
+    return analyticsService.noSpendDays(
+      profile,
+      req.query.period ?? periodOf(new Date(), profile.monthStartDay),
+    );
+  });
+
   app.get<{ Querystring: { period?: string } }>('/analytics/velocity', async (req) => {
     const profile = requireProfile(req);
     return analyticsService.velocity(

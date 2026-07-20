@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { DistributionResponse, VelocityResponse } from '@budget/shared';
+import type {
+  DistributionResponse,
+  ForecastResponse,
+  NoSpendResponse,
+  VelocityResponse,
+} from '@budget/shared';
 import { RefreshCw, Table2, TrendingDown, TrendingUp } from 'lucide-react';
 import { analyticsApi } from '@/entities/analytics/api';
 import { useBudgetStore } from '@/stores/useBudgetStore';
@@ -12,6 +17,8 @@ import { useCurrency } from '@/shared/lib/useCurrency';
 import { haptics } from '@/shared/lib/telegram';
 import { DonutChart, type DonutSlice } from '@/features/analytics/DonutChart';
 import { VelocityChart } from '@/features/analytics/VelocityChart';
+import { ForecastCard } from '@/features/analytics/ForecastCard';
+import { NoSpendCard } from '@/features/analytics/NoSpendCard';
 import { buildColorMap, CHART_REST, MAX_SLICES } from '@/features/analytics/chart-palette';
 import { cn } from '@/shared/ui/cn';
 
@@ -20,6 +27,8 @@ export function AnalyticsScreen() {
   const categories = useBudgetStore((s) => s.categories);
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
   const [velocity, setVelocity] = useState<VelocityResponse | null>(null);
+  const [forecast, setForecast] = useState<ForecastResponse | null>(null);
+  const [noSpend, setNoSpend] = useState<NoSpendResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [asTable, setAsTable] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -27,11 +36,18 @@ export function AnalyticsScreen() {
   useEffect(() => {
     let alive = true;
     setError(null);
-    Promise.all([analyticsApi.distribution(), analyticsApi.velocity()])
-      .then(([d, v]) => {
+    Promise.all([
+      analyticsApi.distribution(),
+      analyticsApi.velocity(),
+      analyticsApi.forecast(),
+      analyticsApi.noSpend(),
+    ])
+      .then(([d, v, f, n]) => {
         if (!alive) return;
         setDistribution(d);
         setVelocity(v);
+        setForecast(f);
+        setNoSpend(n);
       })
       .catch((err: unknown) => {
         if (alive) setError(err instanceof Error ? err.message : 'Не удалось загрузить аналитику');
@@ -152,6 +168,24 @@ export function AnalyticsScreen() {
           />
         </GlassCard>
       )}
+
+      <section className="pb-6">
+        <div className="pb-2">
+          <h2 className="text-sm font-semibold text-ink-muted">Прогноз</h2>
+          <p className="text-[11px] text-ink-faint">
+            На сколько хватит бюджета при нынешнем темпе трат
+          </p>
+        </div>
+        {forecast ? <ForecastCard forecast={forecast} /> : <Skeleton className="h-24 w-full" />}
+      </section>
+
+      <section className="pb-6">
+        <div className="pb-2">
+          <h2 className="text-sm font-semibold text-ink-muted">Дни без трат</h2>
+          <p className="text-[11px] text-ink-faint">Чем длиннее серия, тем лучше</p>
+        </div>
+        {noSpend ? <NoSpendCard data={noSpend} /> : <Skeleton className="h-24 w-full" />}
+      </section>
 
       <section className="pb-6">
         <div className="flex items-center justify-between gap-2 pb-2">

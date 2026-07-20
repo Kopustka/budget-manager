@@ -6,7 +6,7 @@ import { rkey } from '../redis/keys.js';
 import { runAlertsWorker } from './alerts.worker.js';
 
 /**
- * Процесс воркеров: доставка пушей + планировщик вечерних напоминаний.
+ * Процесс воркеров: доставка пушей + планировщик вечерних отчётов.
  * Запуск: npm run worker --workspace apps/api
  *
  * Бот здесь используется только как транспорт (updates не читаются) —
@@ -22,17 +22,17 @@ async function main(): Promise<void> {
   const send = telegramSender(bot);
 
   const scheduler = setInterval(() => {
-    void alertsService.scheduleEveningReminders().then(
-      (count) => {
-        if (count > 0) console.log(`Запланировано напоминаний: ${count}`);
+    void alertsService.scheduleDailyDigests().then(
+      (count: number) => {
+        if (count > 0) console.log(`Запланировано отчётов: ${count}`);
       },
       (err: unknown) => console.error('Планировщик:', err),
     );
   }, SCHEDULER_INTERVAL_MS);
 
   // Первый прогон сразу, не дожидаясь интервала.
-  await alertsService.scheduleEveningReminders().then(
-    (count) => console.log(`Планировщик: напоминаний на сегодня — ${count}`),
+  await alertsService.scheduleDailyDigests().then(
+    (count: number) => console.log(`Планировщик: отчётов на сегодня — ${count}`),
     (err: unknown) => console.error('Планировщик:', err),
   );
 

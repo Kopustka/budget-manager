@@ -131,6 +131,54 @@ export interface VelocityResponse {
   pace: number;
 }
 
+/**
+ * Прогноз исчерпания бюджета (burn rate).
+ *
+ * ON_TRACK — при нынешнем темпе бюджета хватит до конца периода;
+ * TIGHT — хватит впритык (запас меньше пары дней);
+ * SHORTFALL — кончится раньше конца периода;
+ * NO_BUDGET — лимиты не заданы, прогнозировать не от чего;
+ * NO_SPEND — за последнюю неделю трат не было, темп нулевой.
+ */
+export type ForecastVerdict = 'ON_TRACK' | 'TIGHT' | 'SHORTFALL' | 'NO_BUDGET' | 'NO_SPEND';
+
+/** Сколько полных дней берём в расчёт среднего темпа. */
+export const BURN_RATE_WINDOW_DAYS = 7;
+
+/** Запас в днях, ниже которого прогноз считается «впритык». */
+export const FORECAST_TIGHT_DAYS = 2;
+
+export interface ForecastResponse {
+  period: string;
+  verdict: ForecastVerdict;
+  /** Средняя трата в день по окну наблюдения, минорные единицы. */
+  dailyBurn: number;
+  /** Сколько полных дней реально попало в окно (меньше 7 у новых профилей). */
+  windowDays: number;
+  /** Сумма лимитов периода; null — лимитов нет. */
+  budget: number | null;
+  spent: number;
+  /** Остаток бюджета; null без лимитов. Отрицательный — уже перерасход. */
+  remaining: number | null;
+  /** Через сколько дней кончится бюджет при нынешнем темпе; null — не определить. */
+  daysLeftAtBurn: number | null;
+  /** Сколько дней осталось в расчётном периоде. */
+  daysLeftInPeriod: number;
+}
+
+/** Дни без трат за период и серии. */
+export interface NoSpendResponse {
+  period: string;
+  /** Даты YYYY-MM-DD, в которые не было ни одного расхода. */
+  days: string[];
+  /** Серия, идущая прямо сейчас (включая сегодня, пока трат нет). */
+  currentStreak: number;
+  /** Самая длинная серия внутри периода. */
+  bestStreak: number;
+  /** Всего дней без трат в периоде. */
+  total: number;
+}
+
 /** PATCH /api/settings — день начала расчётного месяца */
 export const updateSettingsSchema = z.object({
   monthStartDay: z

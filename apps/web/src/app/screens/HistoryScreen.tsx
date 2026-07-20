@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  SlidersHorizontal,
+  Star,
+} from 'lucide-react';
 import type { HistoryTotals, Transaction, TransactionType } from '@budget/shared';
 import { transactionApi } from '@/entities/transaction/api';
 import { useBudgetStore } from '@/stores/useBudgetStore';
@@ -87,7 +94,14 @@ export function HistoryScreen() {
     };
   }, [range, type, categoryId]);
 
-  /** Лента группируется по дням: сплошной список за месяц читать невозможно. */
+  /**
+   * Лента группируется по дням: сплошной список за месяц читать невозможно.
+   *
+   * Дни без трат попадают в ленту отдельными строками, хотя операций в них нет:
+   * весь смысл отметки в том, чтобы пустой день было видно. Границы берём по
+   * реальным записям отрезка, а не по календарю, — иначе в ленту уехали бы дни,
+   * когда приложением ещё не пользовались, и «серия» ничего не значила бы.
+   */
   const byDay = useMemo(() => {
     const groups = new Map<string, Transaction[]>();
     for (const tx of items) {
@@ -96,8 +110,30 @@ export function HistoryScreen() {
       if (list) list.push(tx);
       else groups.set(key, [tx]);
     }
-    return [...groups.entries()];
-  }, [items]);
+    if (groups.size === 0) return [] as Array<[string, Transaction[]]>;
+
+    const keys = [...groups.keys()].sort();
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+    // Начинаем с первой записи отрезка, а не с его начала: дни до неё человек
+    // приложением не пользовался, и записывать их в достижения нечестно.
+    const from = keys[0]!;
+    // Конец — сегодня, но не дальше конца отрезка: у прошлых периодов будущего нет.
+    const today = dayKey(new Date());
+    const rangeEnd = dayKey(new Date(range.to.getTime() - 86_400_000));
+    const last = today < rangeEnd ? today : rangeEnd;
+
+    const filled: Array<[string, Transaction[]]> = [];
+    for (
+      let t = Date.parse(`${from}T00:00:00.000Z`);
+      t <= Date.parse(`${last}T00:00:00.000Z`);
+      t += 86_400_000
+    ) {
+      const key = dayKey(new Date(t));
+      filled.push([key, groups.get(key) ?? []]);
+    }
+    // Свежее сверху — как было до появления пустых дней.
+    return filled.reverse();
+  }, [items, range.to]);
 
   const expenseCategories = categories.filter((c) => c.kind === 'expense');
   const rangeLabel = formatRange(range.from, range.to);
@@ -251,15 +287,25 @@ export function HistoryScreen() {
         </GlassCard>
       ) : (
         <div className="flex flex-col gap-4 pb-4">
-          {byDay.map(([day, dayItems]) => (
+          {byDay.map(([day, dayItems]) => {
+            // День без трат: зачисления его не портят — важно, что деньги не уходили.
+            const noSpend = dayItems.every((t) => t.type !== 'spend');
+            return (
             <section key={day}>
               <div className="flex items-baseline justify-between pb-1">
-                <h2 className="text-xs font-semibold text-ink-muted">
+                <h2 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
                   {formatRelativeDay(`${day}T12:00:00.000Z`)}
+                  {noSpend && (
+                    <span className="flex items-center gap-1 text-warning" title="День без трат">
+                      <Star size={12} strokeWidth={2.25} aria-hidden="true" />
+                      <span className="font-normal">без трат</span>
+                    </span>
+                  )}
                 </h2>
-                <span className="text-xs text-ink-faint">
-                  {dayItems.length} опер.
-                </span>
+                {/* «0 опер.» читается как ошибка загрузки — у пустого дня счётчик молчит */}
+                {dayItems.length > 0 ? (
+                  <span className="text-xs text-ink-faint">{dayItems.length} опер.</span>
+                ) : null}
               </div>
               <ul className="flex flex-col gap-2">
                 {dayItems.map((t) => {
@@ -300,7 +346,8 @@ export function HistoryScreen() {
                 })}
               </ul>
             </section>
-          ))}
+            );
+          })}
         </div>
       )}
 

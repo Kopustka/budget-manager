@@ -1,4 +1,9 @@
-import type { DistributionResponse, VelocityResponse } from '@budget/shared';
+import type {
+  DistributionResponse,
+  ForecastResponse,
+  NoSpendResponse,
+  VelocityResponse,
+} from '@budget/shared';
 import { api } from '@/shared/api/client';
 
 export const analyticsApi = {
@@ -9,4 +14,12 @@ export const analyticsApi = {
   /** Факт нарастающим итогом против равномерной кривой (velocity). */
   velocity: (period?: string) =>
     api.get<VelocityResponse>(`/analytics/velocity${period ? `?period=${period}` : ''}`),
+
+  /** Прогноз исчерпания бюджета по среднему темпу трат. */
+  forecast: (period?: string) =>
+    api.get<ForecastResponse>(`/analytics/forecast${period ? `?period=${period}` : ''}`),
+
+  /** Дни без трат и серии. */
+  noSpend: (period?: string) =>
+    api.get<NoSpendResponse>(`/analytics/no-spend${period ? `?period=${period}` : ''}`),
 };

@@ -3,7 +3,8 @@ import { pool } from '../../config/db.js';
 import { redis } from '../../config/redis.js';
 import { rkey } from '../../redis/keys.js';
 import { scripts } from '../../redis/scripts.js';
-import { dayIndexInPeriod, daysInPeriod, periodRange } from '../../shared/period.js';
+import { dayIndexInPeriod, daysInPeriod, periodOf, periodRange } from '../../shared/period.js';
+import { analyticsService } from '../analytics/analytics.service.js';
 import { alertsQueue, pushOnce } from './alerts.queue.js';
 import type {
   AlertBase,
@@ -12,8 +13,8 @@ import type {
   OverdraftAlert,
 } from './alerts.types.js';
 
-/** Во сколько (по UTC) слать вечернее напоминание записать траты. */
-const REMINDER_HOUR_UTC = 18;
+/** Во сколько (по UTC) уходит вечерний отчёт «День в цифрах». */
+const DIGEST_HOUR_UTC = 18;
 
 /** Порог «слишком быстро»: дневная трата вдвое выше равномерной доли бюджета. */
 const FAST_PACE_FACTOR = 2;
@@ -134,54 +135,112 @@ export const alertsService = {
   },
 
   /**
-   * Запланировать вечерние напоминания тем, кто сегодня ничего не записал.
-   * Идемпотентно: повторный вызов за те же сутки ничего не добавит.
+   * Запланировать вечерние отчёты «День в цифрах».
+   *
+   * Один отчёт на профиль в сутки, только по активному профилю аккаунта.
+   * В очередь кладётся адресация без цифр — их подставит `hydrateAlert` в
+   * момент доставки, иначе к вечеру они устареют.
    */
-  async scheduleEveningReminders(now: Date = new Date()): Promise<number> {
+  async scheduleDailyDigests(now: Date = new Date()): Promise<number> {
     const dayKey = now.toISOString().slice(0, 10);
     const sendAt = new Date(
-      Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate(),
-        REMINDER_HOUR_UTC,
-        0,
-        0,
-      ),
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), DIGEST_HOUR_UTC, 0, 0),
     );
 
-    /*
-     * Только активный профиль каждого аккаунта: уведомления приходят по тому
-     * бюджету, который человек сейчас ведёт. Иначе три профиля давали бы три
-     * напоминания за вечер, и их перестали бы читать.
-     */
     const { rows } = await pool.query<{ id: string; telegram_id: string; currency: string }>(
       `SELECT p.id, u.telegram_id, p.currency
          FROM users u
-         JOIN profiles p ON p.id = u.active_profile_id
-        WHERE NOT EXISTS (
-          SELECT 1 FROM transactions t
-           WHERE t.profile_id = p.id
-             AND t.occurred_at >= $1::date
-             AND t.occurred_at < ($1::date + interval '1 day')
-        )`,
-      [dayKey],
+         JOIN profiles p ON p.id = u.active_profile_id`,
     );
 
     let scheduled = 0;
     for (const row of rows) {
       const alert: BotAlert = {
-        kind: 'evening_reminder',
+        kind: 'daily_digest',
         profileId: row.id,
         telegramId: Number(row.telegram_id),
         currency: row.currency,
         queuedAt: now.toISOString(),
+        day: dayKey,
       };
-      // Дедупликация: одно напоминание на профиль в сутки.
       const ok = await pushOnceScheduled(alert, dayKey, sendAt);
       if (ok) scheduled += 1;
     }
     return scheduled;
+  },
+
+  /**
+   * Подставить в отчёт актуальные цифры перед отправкой.
+   *
+   * Остальные виды пушей проходят насквозь: их числа верны на момент события,
+   * и пересчитывать их поздно и незачем.
+   */
+  async hydrateAlert(alert: BotAlert): Promise<BotAlert> {
+    if (alert.kind !== 'daily_digest') return alert;
+
+    const { rows: profileRows } = await pool.query<{ month_start_day: number }>(
+      'SELECT month_start_day FROM profiles WHERE id = $1',
+      [alert.profileId],
+    );
+    const monthStartDay = profileRows[0]?.month_start_day ?? 1;
+    const day = new Date(`${alert.day}T12:00:00.000Z`);
+    const period = periodOf(day, monthStartDay);
+    const { start, end } = periodRange(period, monthStartDay);
+
+    const [todayRow, budgetRow, spentRow, overRow] = await Promise.all([
+      pool.query<{ total: string | null }>(
+        `SELECT COALESCE(SUM(amount), 0) AS total FROM transactions
+          WHERE profile_id = $1 AND type = 'spend'
+            AND occurred_at >= $2::date AND occurred_at < ($2::date + interval '1 day')`,
+        [alert.profileId, alert.day],
+      ),
+      pool.query<{ total: string | null }>(
+        `SELECT COALESCE(SUM(cl.limit_amount), 0) AS total
+           FROM category_limits cl JOIN categories c ON c.id = cl.category_id
+          WHERE c.profile_id = $1 AND cl.period = $2`,
+        [alert.profileId, period],
+      ),
+      pool.query<{ total: string | null }>(
+        `SELECT COALESCE(SUM(amount), 0) AS total FROM transactions
+          WHERE profile_id = $1 AND type = 'spend'
+            AND occurred_at >= $2 AND occurred_at < $3`,
+        [alert.profileId, start, end],
+      ),
+      // Вышли ли хоть по одной категории за её собственный лимит: общий остаток
+      // может быть в плюсе, а конкретная категория — уже пробита.
+      pool.query<{ n: string }>(
+        `SELECT count(*) AS n
+           FROM category_limits cl
+           JOIN categories c ON c.id = cl.category_id
+          WHERE c.profile_id = $1 AND cl.period = $2
+            AND cl.limit_amount < (
+              SELECT COALESCE(SUM(t.amount), 0) FROM transactions t
+               WHERE t.category_id = c.id AND t.type = 'spend'
+                 AND t.occurred_at >= $3 AND t.occurred_at < $4
+            )`,
+        [alert.profileId, period, start, end],
+      ),
+    ]);
+
+    const spentToday = Number(todayRow.rows[0]?.total ?? 0);
+    const budgetRaw = Number(budgetRow.rows[0]?.total ?? 0);
+    const budget = budgetRaw > 0 ? budgetRaw : null;
+    const spentPeriod = Number(spentRow.rows[0]?.total ?? 0);
+
+    let noSpendStreak = 0;
+    if (spentToday === 0) {
+      const scope = { id: alert.profileId, monthStartDay } as ProfileScope;
+      noSpendStreak = (await analyticsService.noSpendDays(scope, period)).currentStreak;
+    }
+
+    return {
+      ...alert,
+      spentToday,
+      budget,
+      remaining: budget === null ? null : budget - spentPeriod,
+      overLimit: Number(overRow.rows[0]?.n ?? 0) > 0,
+      noSpendStreak,
+    };
   },
 };
 

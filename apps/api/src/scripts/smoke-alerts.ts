@@ -124,10 +124,10 @@ async function main(): Promise<void> {
   await pool.query('DELETE FROM transactions WHERE profile_id = $1', [profile.id]);
   const keys = await redis.keys(`${env.REDIS_NAMESPACE}:profile:${profile.id}:alert:*`);
   if (keys.length > 0) await redis.del(...keys);
-  const scheduled = await alertsService.scheduleEveningReminders();
-  check('напоминание запланировано', scheduled > 0, scheduled);
+  const scheduled = await alertsService.scheduleDailyDigests();
+  check('отчёт запланирован', scheduled > 0, scheduled);
   check('лежит в ZSET, а не в LIST', (await alertsQueue.size()) === 0);
-  const repeat = await alertsService.scheduleEveningReminders();
+  const repeat = await alertsService.scheduleDailyDigests();
   check('повторный вызов ничего не добавляет', repeat === 0, repeat);
 
   // Двигаем время вперёд: созревшее напоминание должно уехать в основную очередь.
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
   check('созревшие переносятся в очередь доставки', promoted > 0, promoted);
   const payload = await redis.lrange(rkey.botAlertsQueue, 0, -1);
   const reminder = payload.map((p) => JSON.parse(p) as { kind: string })[0];
-  check('это вечернее напоминание', reminder?.kind === 'evening_reminder', reminder);
+  check('это вечерний отчёт', reminder?.kind === 'daily_digest', reminder);
   if (reminder) console.log(`\n  ${renderAlert(reminder as never).replace(/\n/g, '\n  ')}\n`);
 
   await redis.del(rkey.botAlertsQueue, rkey.botAlertsScheduled);
