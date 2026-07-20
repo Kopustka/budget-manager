@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CATEGORY_COLORS, CATEGORY_ICONS } from '@budget/shared';
+import { CATEGORY_COLORS, CATEGORY_ICONS, type UpdateCategoryInput } from '@budget/shared';
 import { BottomSheet } from '@/shared/ui/BottomSheet';
 import { Button } from '@/shared/ui/Button';
 import { CategoryIcon } from '@/shared/ui/CategoryIcon';
@@ -67,17 +67,31 @@ export function EditCategorySheet({ category, onClose }: EditCategorySheetProps)
       return;
     }
 
+    /**
+     * Шлём только изменённое — это и есть семантика PATCH.
+     *
+     * Отправлять форму целиком нельзя: у категорий, заведённых сидом, цвет
+     * записан хексом (`#FF9500`), а палитра каталога состоит из CSS-переменных,
+     * и такое значение, вернувшись на сервер нетронутым, не проходит валидацию.
+     * Заодно не трогаем иконку у категорий, у которых её не было.
+     */
+    const patch: UpdateCategoryInput = {};
+    if (trimmed !== category.name) patch.name = trimmed;
+    if (icon !== (category.icon ?? CATEGORY_ICONS[0])) patch.icon = icon;
+    if (color !== null && color !== category.color) patch.color = color;
+    // null — явное «снять лимит»: сервер отличает его от отсутствия поля.
+    const nextLimit = parseAmount(limit);
+    if (nextLimit !== category.limit) patch.limitAmount = nextLimit;
+
+    if (Object.keys(patch).length === 0) {
+      onClose();
+      return;
+    }
+
     setSaving(true);
     setError(null);
     try {
-      await updateCategory(category.id, {
-        name: trimmed,
-        icon,
-        ...(color ? { color } : {}),
-        // Очищенное поле — явное «снять лимит»: null сервер отличает от
-        // отсутствия поля, которое означало бы «не трогай план».
-        limitAmount: parseAmount(limit),
-      });
+      await updateCategory(category.id, patch);
       haptics.success();
       notify('Изменения сохранены', 'success');
       onClose();
