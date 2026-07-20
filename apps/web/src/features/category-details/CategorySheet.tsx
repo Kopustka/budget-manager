@@ -103,23 +103,19 @@ export function CategorySheet({ category, onClose, onEdit }: CategorySheetProps)
       open
       title={category.name}
       onClose={onClose}
+      // Кнопки «Понятно» нет: она ничего не делала сверх крестика, тапа по
+      // затемнению и Esc — только занимала место под единственным действием.
       footer={
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={() => {
-              haptics.selection();
-              onEdit(category);
-            }}
-          >
-            <SlidersHorizontal size={18} strokeWidth={1.75} aria-hidden="true" />
-            {category.limit === null ? 'Задать лимит' : 'Настроить'}
-          </Button>
-          <Button className="flex-1" onClick={onClose}>
-            Понятно
-          </Button>
-        </div>
+        <Button
+          full
+          onClick={() => {
+            haptics.selection();
+            onEdit(category);
+          }}
+        >
+          <SlidersHorizontal size={18} strokeWidth={1.75} aria-hidden="true" />
+          {category.limit === null ? 'Задать лимит' : 'Настроить'}
+        </Button>
       }
     >
       <div className="flex items-center gap-3 pb-4">

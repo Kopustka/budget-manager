@@ -10,6 +10,12 @@ interface GlassCardProps {
   warning?: boolean;
   /** Активная цель перетаскивания. */
   highlighted?: boolean;
+  /**
+   * Уплотнённые отступы — для плотных сеток. Отдельный проп, а не класс извне:
+   * `cn` просто склеивает строки, и `p-3` рядом с `p-4` разрешался бы порядком
+   * правил в таблице стилей, а не намерением вызывающего.
+   */
+  dense?: boolean;
   onClick?: () => void;
   ariaLabel?: string;
 }
@@ -30,11 +36,13 @@ export function GlassCard({
   danger = false,
   warning = false,
   highlighted = false,
+  dense = false,
   onClick,
   ariaLabel,
 }: GlassCardProps) {
   const base = cn(
-    'glass rounded-[var(--radius-card)] p-4',
+    'glass rounded-[var(--radius-card)]',
+    dense ? 'p-2.5' : 'p-4',
     'transition-[background-color,border-color,box-shadow,transform] duration-[var(--duration-base)] ease-[var(--ease-ios)]',
     danger &&
       '[--glass-border:var(--color-danger)] bg-danger/30 shadow-[0_0_28px_-4px_var(--color-danger)]',

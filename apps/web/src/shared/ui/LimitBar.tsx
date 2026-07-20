@@ -7,6 +7,8 @@ interface LimitBarProps {
   limit: number;
   /** Статус из стора. Не передан — считаем по тем же порогам на месте. */
   status?: LimitStatus;
+  /** Уплотнённый вид для плотной сетки карточек. */
+  dense?: boolean;
 }
 
 /** Цвет заполнения по статусу: один и тот же язык на карточке и в шторке. */
@@ -28,7 +30,7 @@ const TEXT: Record<LimitStatus, string> = {
  * Прогресс по лимиту категории. Статус передаётся не только цветом, но и
  * подписью с процентом — цвет в одиночку недоступен для дальтоников.
  */
-export function LimitBar({ spent, limit, status }: LimitBarProps) {
+export function LimitBar({ spent, limit, status, dense = false }: LimitBarProps) {
   const state = status ?? limitStatus(spent, limit);
   const ratio = limitRatio(spent, limit) ?? 0;
   // Полоса упирается в 100%: перерасход показывает подпись, а не вылезшая
@@ -38,7 +40,10 @@ export function LimitBar({ spent, limit, status }: LimitBarProps) {
   return (
     <div>
       <div
-        className="h-1.5 w-full overflow-hidden rounded-full bg-hairline"
+        className={cn(
+          'w-full overflow-hidden rounded-full bg-hairline',
+          dense ? 'h-1' : 'h-1.5',
+        )}
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}
@@ -53,9 +58,14 @@ export function LimitBar({ spent, limit, status }: LimitBarProps) {
           style={{ width: `${filled * 100}%` }}
         />
       </div>
-      <p className={cn('mt-1 text-xs tabular', TEXT[state])}>
-        {formatPercent(ratio)} лимита
-        {state === 'EXCEEDED' ? (ratio > 1 ? ' — превышен' : ' — исчерпан') : ''}
+      {/*
+        Слово «лимита» убрано: рядом полоса прогресса, и процент без неё не читается
+        как что-то другое. А вот пометку о превышении оставляем — она несёт смысл,
+        которого в числе нет, и дублирует красный цвет для тех, кто его не различает.
+      */}
+      <p className={cn('mt-1 tabular', dense ? 'text-[10px]' : 'text-xs', TEXT[state])}>
+        {formatPercent(ratio)}
+        {state === 'EXCEEDED' ? (ratio > 1 ? ' · превышен' : ' · исчерпан') : ''}
       </p>
     </div>
   );
