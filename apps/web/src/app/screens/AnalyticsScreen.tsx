@@ -26,7 +26,10 @@ import { cn } from '@/shared/ui/cn';
 /** Аналитика месяца: на что ушли деньги (donut) и с какой скоростью (velocity). */
 export function AnalyticsScreen() {
   const categories = useBudgetStore((s) => s.categories);
-  const plannedSummary = usePlannedStore((s) => s.summary);
+  const wallets = useBudgetStore((s) => s.wallets);
+  // Свободный остаток считаем здесь же, из живого баланса: серверный снимок
+  // устаревает после первой же операции.
+  const upcoming = usePlannedStore((s) => s.summary?.upcoming ?? 0);
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
   const [velocity, setVelocity] = useState<VelocityResponse | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
@@ -220,7 +223,7 @@ export function AnalyticsScreen() {
             <DonutChart
               slices={slices}
               total={distribution.total}
-              free={plannedSummary?.free ?? null}
+              free={upcoming > 0 ? wallets.reduce((sum, w) => sum + w.balance, 0) - upcoming : null}
             />
           )}
         </GlassCard>
