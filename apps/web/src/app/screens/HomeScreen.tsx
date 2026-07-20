@@ -48,7 +48,11 @@ export function HomeScreen() {
   const periodStart = useSettingsStore((s) => s.periodStart);
   const periodEnd = useSettingsStore((s) => s.periodEnd);
   const currency = useCurrency();
-  const plannedSummary = usePlannedStore((s) => s.summary);
+  // С сервера берём только обязательства: они меняются редко (завели событие,
+  // подтвердили списание) и оба раза стор перезагружается. Сам баланс держим
+  // из кошельков — иначе после каждой операции в шапке висело бы старое число,
+  // посчитанное на момент загрузки календаря.
+  const upcoming = usePlannedStore((s) => s.summary?.upcoming ?? 0);
 
   const [openCategory, setOpenCategory] = useState<CategoryWithStats | null>(null);
   const [editingCategory, setEditingCategory] = useState<CategoryWithStats | null>(null);
@@ -68,6 +72,8 @@ export function HomeScreen() {
    * на главной обрезана последними записями, а spent приходит с сервера уже за
    * расчётный период — только он сходится с суммами на карточках.
    */
+  const freeBalance = totalBalance - upcoming;
+
   const totalSpent = useMemo(
     () => expenses.reduce((sum, c) => sum + (c.spent ?? 0), 0),
     [expenses],
@@ -140,24 +146,19 @@ export function HomeScreen() {
           {/* Главный вопрос — «сколько я могу потратить», а не «сколько лежит на счету».
               Пока обязательств нет, обе величины совпадают, и заголовок это признаёт. */}
           <p className="text-sm text-ink-muted">
-            {plannedSummary && plannedSummary.upcoming > 0
-              ? 'Свободно до конца месяца'
-              : 'Общий баланс'}
+            {upcoming > 0 ? 'Свободно до конца месяца' : 'Общий баланс'}
           </p>
           <p className="text-xs tracking-wide text-ink-faint">{monthLabel}</p>
         </div>
         {loading && wallets.length === 0 ? (
           <Skeleton className="mt-1 h-10 w-48" />
         ) : (
-          <Money
-            value={plannedSummary ? plannedSummary.free : totalBalance}
-            className="text-4xl font-semibold tracking-tight"
-          />
+          <Money value={freeBalance} className="text-4xl font-semibold tracking-tight" />
         )}
-        {plannedSummary && plannedSummary.upcoming > 0 && (
+        {upcoming > 0 && (
           <p className="pt-1 text-xs text-ink-faint">
-            На счетах <Money value={plannedSummary.balance} className="text-ink-muted" />, из них{' '}
-            <Money value={plannedSummary.upcoming} className="text-ink-muted" /> уйдёт по календарю
+            На счетах <Money value={totalBalance} className="text-ink-muted" />, из них{' '}
+            <Money value={upcoming} className="text-ink-muted" /> уйдёт по календарю
           </p>
         )}
         <div className="mt-3 flex gap-2">
