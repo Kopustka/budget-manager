@@ -249,6 +249,13 @@ export function HomeScreen() {
           </ul>
         )}
 
+        {/* Единственный способ записать операцию без жеста: перетаскивание
+            недоступно с клавиатуры и скринридера, поэтому точка входа обязана
+            остаться — но обычной плиткой, а не плавающей кнопкой поверх ленты */}
+        <div className="pt-2">
+          <AddButton label="Записать операцию" onClick={() => setQuickAdd(true)} />
+        </div>
+
         {/* Ссылка видна всегда: из неё понятно, что тремя строками дело не кончается */}
         <button
           type="button"
@@ -262,20 +269,6 @@ export function HomeScreen() {
           <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
         </button>
       </Section>
-
-      {/* Запись операции без жеста. Кнопка плавающая: раньше она жила в карусели,
-          а карусель уехала в шторку — без неё способ ввода с клавиатуры пропал бы */}
-      <button
-        type="button"
-        onClick={() => {
-          haptics.impact('medium');
-          setQuickAdd(true);
-        }}
-        aria-label="Записать операцию"
-        className="fixed right-4 bottom-24 z-30 grid h-14 w-14 place-items-center rounded-2xl bg-brand text-brand-ink shadow-lg transition-transform duration-[var(--duration-fast)] active:scale-95"
-      >
-        <Plus size={26} strokeWidth={2} aria-hidden="true" />
-      </button>
 
       <CategorySheet
         category={openCategory}

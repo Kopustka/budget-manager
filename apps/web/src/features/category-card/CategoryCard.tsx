@@ -35,6 +35,7 @@ export function CategoryCard({ category, onOpen }: CategoryCardProps) {
     <DropNode kind="expense" id={category.id} className="h-full">
       {({ isOver, isAllowed }) => (
         <GlassCard
+          dense
           danger={status === 'EXCEEDED'}
           warning={status === 'WARNING'}
           highlighted={isOver && isAllowed}
@@ -43,21 +44,21 @@ export function CategoryCard({ category, onOpen }: CategoryCardProps) {
             haptics.selection();
             onOpen(category);
           }}
-          className="flex h-full flex-col gap-3"
+          className="flex h-full flex-col gap-1.5"
         >
-          <div className="flex items-center gap-2">
-            <CategoryIcon name={category.icon} color={category.color} size={20} />
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{category.name}</span>
+          <div className="flex items-center gap-1.5">
+            <CategoryIcon name={category.icon} color={category.color} size={14} />
+            <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{category.name}</span>
           </div>
 
-          <Money value={spent} compact className="text-xl font-semibold" />
+          <Money value={spent} compact className="text-sm font-semibold" />
 
           {/* mt-auto прижимает прогресс к низу — карточки в сетке выглядят выровненными */}
           <div className="mt-auto">
             {limit !== null ? (
-              <LimitBar spent={spent} limit={limit} status={status} />
+              <LimitBar spent={spent} limit={limit} status={status} dense />
             ) : (
-              <p className="text-xs text-ink-faint">Без лимита</p>
+              <p className="text-[10px] text-ink-faint">Без лимита</p>
             )}
           </div>
         </GlassCard>
