@@ -6,7 +6,7 @@ import { asDuplicateError } from '../../shared/pg-errors.js';
 
 interface WalletRow {
   id: string;
-  user_id: string;
+  profile_id: string;
   name: string;
   balance: string;
   currency: string;
@@ -16,7 +16,7 @@ interface WalletRow {
 function toWallet(r: WalletRow): Wallet {
   return {
     id: r.id,
-    userId: r.user_id,
+    profileId: r.profile_id,
     name: r.name,
     balance: Number(r.balance),
     currency: r.currency,
@@ -25,18 +25,18 @@ function toWallet(r: WalletRow): Wallet {
 }
 
 export const walletsRepository = {
-  async listByUser(userId: string): Promise<Wallet[]> {
+  async listByProfile(profileId: string): Promise<Wallet[]> {
     const { rows } = await pool.query<WalletRow>(
-      'SELECT * FROM wallets WHERE user_id = $1 ORDER BY created_at',
-      [userId],
+      'SELECT * FROM wallets WHERE profile_id = $1 ORDER BY created_at',
+      [profileId],
     );
     return rows.map(toWallet);
   },
 
-  async countByUser(userId: string): Promise<number> {
+  async countByProfile(profileId: string): Promise<number> {
     const { rows } = await pool.query<{ count: string }>(
-      'SELECT count(*) FROM wallets WHERE user_id = $1',
-      [userId],
+      'SELECT count(*) FROM wallets WHERE profile_id = $1',
+      [profileId],
     );
     return Number(rows[0]?.count ?? 0);
   },
@@ -46,16 +46,16 @@ export const walletsRepository = {
    * единицах валюты пользователя, разные валюты в одном балансе не сложатся.
    */
   async create(
-    userId: string,
+    profileId: string,
     name: string,
     balance: number,
     currency: string,
   ): Promise<Wallet> {
     try {
       const { rows } = await pool.query<WalletRow>(
-        `INSERT INTO wallets (user_id, name, balance, currency)
+        `INSERT INTO wallets (profile_id, name, balance, currency)
          VALUES ($1, $2, $3, $4) RETURNING *`,
-        [userId, name, balance, currency],
+        [profileId, name, balance, currency],
       );
       return toWallet(rows[0]!);
     } catch (err) {
@@ -69,13 +69,13 @@ export const walletsRepository = {
    */
   async findOwned(
     db: Queryable,
-    userId: string,
+    profileId: string,
     walletId: string,
     forUpdate = false,
   ): Promise<Wallet> {
     const { rows } = await db.query<WalletRow>(
-      `SELECT * FROM wallets WHERE id = $1 AND user_id = $2${forUpdate ? ' FOR UPDATE' : ''}`,
-      [walletId, userId],
+      `SELECT * FROM wallets WHERE id = $1 AND profile_id = $2${forUpdate ? ' FOR UPDATE' : ''}`,
+      [walletId, profileId],
     );
     if (!rows[0]) throw new NotFoundError('Кошелёк не найден');
     return toWallet(rows[0]);

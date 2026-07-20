@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { InputFile } from 'grammy';
 import { exportRequestSchema } from '@budget/shared';
 import { authenticate } from '../../shared/auth.js';
-import { requireUser } from '../../shared/current-user.js';
+import { requireProfile } from '../../shared/current-profile.js';
 import { parseOrThrow } from '../../shared/validate.js';
 import { AppError } from '../../shared/errors.js';
 import { getBotApi } from '../../bot/bot-api.js';
@@ -17,10 +17,10 @@ export async function exportRoutes(app: FastifyInstance): Promise<void> {
    * тем каналом, который в Telegram работает всегда.
    */
   app.post('/export', async (req) => {
-    const user = requireUser(req);
+    const profile = requireProfile(req);
     const input = parseOrThrow(exportRequestSchema, req.body ?? {});
 
-    const { csv, rows, fileName } = await exportService.build(user, input.from, input.to);
+    const { csv, rows, fileName } = await exportService.build(profile, input.from, input.to);
     if (rows === 0) {
       throw new AppError(422, 'За выбранный период операций нет', 'EMPTY_EXPORT');
     }
@@ -28,7 +28,7 @@ export async function exportRoutes(app: FastifyInstance): Promise<void> {
     const caption = input.from || input.to ? 'Выгрузка за выбранный период' : 'Полная выгрузка операций';
 
     try {
-      await getBotApi().sendDocument(user.telegramId, new InputFile(csv, fileName), {
+      await getBotApi().sendDocument(profile.telegramId, new InputFile(csv, fileName), {
         caption: `${caption}: ${rows} операц${rows % 10 === 1 && rows % 100 !== 11 ? 'ия' : 'ий'}`,
       });
     } catch (err) {

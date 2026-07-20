@@ -4,6 +4,7 @@ import { redis } from '../config/redis.js';
 import { rkey } from '../redis/keys.js';
 import { periodOf } from '../shared/period.js';
 import { usersRepository } from '../modules/users/users.repository.js';
+import { profilesRepository } from '../modules/profiles/profiles.repository.js';
 import { transactionsService } from '../modules/transactions/transactions.service.js';
 import { alertsQueue } from '../modules/alerts/alerts.queue.js';
 import { alertsService } from '../modules/alerts/alerts.service.js';
@@ -26,9 +27,9 @@ function check(name: string, ok: boolean, detail?: unknown): void {
   }
 }
 
-async function resetUser(userId: string): Promise<void> {
-  await pool.query('DELETE FROM transactions WHERE user_id = $1', [userId]);
-  await pool.query('UPDATE wallets SET balance = 50000000 WHERE user_id = $1', [userId]);
+async function resetProfile(userId: string): Promise<void> {
+  await pool.query('DELETE FROM transactions WHERE profile_id = $1', [userId]);
+  await pool.query('UPDATE wallets SET balance = 50000000 WHERE profile_id = $1', [userId]);
   const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${userId}:*`);
   if (keys.length > 0) await redis.del(...keys);
   await redis.del(rkey.botAlertsQueue, rkey.botAlertsScheduled);
@@ -36,18 +37,20 @@ async function resetUser(userId: string): Promise<void> {
 
 async function main(): Promise<void> {
   const user = await usersRepository.upsertByTelegram({ telegramId: TEST_TELEGRAM_ID });
-  await resetUser(user.id);
+  const profile = await profilesRepository.findActiveScope(user.id);
+  if (!profile) throw new Error('У тестового пользователя нет активного профиля');
+  await resetProfile(profile.id);
 
   const period = periodOf(new Date());
   const { rows: wallets } = await pool.query<{ id: string }>(
-    'SELECT id FROM wallets WHERE user_id = $1 LIMIT 1',
-    [user.id],
+    'SELECT id FROM wallets WHERE profile_id = $1 LIMIT 1',
+    [profile.id],
   );
   const { rows: cats } = await pool.query<{ id: string; name: string }>(
     `SELECT c.id, c.name FROM categories c
       JOIN category_limits cl ON cl.category_id = c.id AND cl.period = $2
-     WHERE c.user_id = $1 AND c.kind = 'expense' LIMIT 1`,
-    [user.id, period],
+     WHERE c.profile_id = $1 AND c.kind = 'expense' LIMIT 1`,
+    [profile.id, period],
   );
   const walletId = wallets[0]!.id;
   const category = cats[0]!;
@@ -60,7 +63,7 @@ async function main(): Promise<void> {
   console.log('\n[1] Умеренная трата — пушей быть не должно');
   // Заметно ниже дневной нормы бюджета: ни лимит, ни темп не должны сработать.
   const smallSpend = Math.floor(limit / 100);
-  await transactionsService.processDnd(user, {
+  await transactionsService.processDnd(profile, {
     source: 'wallet',
     target: 'expense',
     walletId,
@@ -70,7 +73,7 @@ async function main(): Promise<void> {
   check('очередь пуста', (await alertsQueue.size()) === 0, await alertsQueue.size());
 
   console.log('\n[2] Достижение лимита категории');
-  await transactionsService.processDnd(user, {
+  await transactionsService.processDnd(profile, {
     source: 'wallet',
     target: 'expense',
     walletId,
@@ -84,7 +87,7 @@ async function main(): Promise<void> {
 
   console.log('\n[3] Повтор не дублирует уведомление');
   const before = await alertsQueue.size();
-  await transactionsService.processDnd(user, {
+  await transactionsService.processDnd(profile, {
     source: 'wallet',
     target: 'expense',
     walletId,
@@ -118,8 +121,8 @@ async function main(): Promise<void> {
   for (const m of sent) console.log(`  ${m.text.replace(/\n/g, '\n  ')}\n`);
 
   console.log('[5] Отложенные напоминания');
-  await pool.query('DELETE FROM transactions WHERE user_id = $1', [user.id]);
-  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${user.id}:alert:*`);
+  await pool.query('DELETE FROM transactions WHERE profile_id = $1', [profile.id]);
+  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:profile:${profile.id}:alert:*`);
   if (keys.length > 0) await redis.del(...keys);
   const scheduled = await alertsService.scheduleEveningReminders();
   check('напоминание запланировано', scheduled > 0, scheduled);

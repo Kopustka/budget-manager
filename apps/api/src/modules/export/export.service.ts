@@ -1,4 +1,5 @@
 import type { Transaction, User } from '@budget/shared';
+import type { ProfileScope } from '../../modules/profiles/profiles.repository.js';
 import { pool } from '../../config/db.js';
 
 /**
@@ -53,17 +54,17 @@ export interface ExportResult {
 
 export const exportService = {
   /** Собрать CSV за диапазон (обе границы необязательны). */
-  async build(user: User, from?: string, to?: string): Promise<ExportResult> {
+  async build(profile: ProfileScope, from?: string, to?: string): Promise<ExportResult> {
     const { rows } = await pool.query<ExportRow>(
       `SELECT t.*, w.name AS wallet_name, c.name AS category_name
          FROM transactions t
          LEFT JOIN wallets w ON w.id = t.wallet_id
          LEFT JOIN categories c ON c.id = t.category_id
-        WHERE t.user_id = $1
+        WHERE t.profile_id = $1
           AND ($2::timestamptz IS NULL OR t.occurred_at >= $2)
           AND ($3::timestamptz IS NULL OR t.occurred_at < $3)
         ORDER BY t.occurred_at`,
-      [user.id, from ?? null, to ?? null],
+      [profile.id, from ?? null, to ?? null],
     );
 
     const lines = [HEADER.join(SEP)];
@@ -75,7 +76,7 @@ export const exportService = {
           csvCell(occurred.toISOString().slice(11, 16)),
           csvCell(row.type === 'deposit' ? 'Доход' : 'Расход'),
           csvAmount(Number(row.amount)),
-          csvCell(user.currency),
+          csvCell(profile.currency),
           csvCell(row.wallet_name),
           csvCell(row.category_name),
           csvCell(row.subcategory),

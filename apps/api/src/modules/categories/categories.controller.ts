@@ -11,7 +11,7 @@ import {
 } from '@budget/shared';
 import { pool } from '../../config/db.js';
 import { authenticate } from '../../shared/auth.js';
-import { requireUser } from '../../shared/current-user.js';
+import { requireProfile } from '../../shared/current-profile.js';
 import { parseOrThrow } from '../../shared/validate.js';
 import { ConflictError, ValidationError } from '../../shared/errors.js';
 import { cache } from '../../redis/cache.js';
@@ -35,7 +35,7 @@ interface CategoryWithStats extends Category {
  * читает их оттуда.
  */
 async function withStats(
-  userId: string,
+  profileId: string,
   monthStartDay: number,
   period: string,
   category: Category,
@@ -46,15 +46,15 @@ async function withStats(
   }
 
   const [spent, limit] = await Promise.all([
-    transactionsRepository.sumSpent(pool, userId, category.id, period, monthStartDay),
+    transactionsRepository.sumSpent(pool, profileId, category.id, period, monthStartDay),
     categoriesRepository.findLimit(pool, category.id, period),
   ]);
 
-  cache.setSpent(userId, period, category.id, spent);
+  cache.setSpent(profileId, period, category.id, spent);
   // Снятый план обязан исчезнуть и из кэша, иначе проверка лимита продолжит
   // сравнивать траты с суммой, которой в базе уже нет.
-  if (limit !== null) cache.setLimit(userId, period, category.id, limit);
-  else cache.clearLimit(userId, period, category.id);
+  if (limit !== null) cache.setLimit(profileId, period, category.id, limit);
+  else cache.clearLimit(profileId, period, category.id);
 
   return {
     ...category,
@@ -67,18 +67,18 @@ async function withStats(
 
 /** Записать план на период в PostgreSQL и в быстрый слой. null — снять план. */
 async function persistLimit(
-  userId: string,
+  profileId: string,
   categoryId: string,
   period: string,
   limitAmount: number | null,
 ): Promise<void> {
   if (limitAmount === null) {
     await categoriesRepository.removeLimit(categoryId, period);
-    cache.clearLimit(userId, period, categoryId);
+    cache.clearLimit(profileId, period, categoryId);
     return;
   }
   await categoriesRepository.setLimit(categoryId, period, limitAmount);
-  cache.setLimit(userId, period, categoryId, limitAmount);
+  cache.setLimit(profileId, period, categoryId, limitAmount);
 }
 
 export async function categoriesRoutes(app: FastifyInstance): Promise<void> {
@@ -88,12 +88,12 @@ export async function categoriesRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { kind?: 'income' | 'expense'; period?: string } }>(
     '/categories',
     async (req) => {
-      const user = requireUser(req);
-      const period = req.query.period ?? periodOf(new Date(), user.monthStartDay);
-      const categories = await categoriesRepository.listByUser(user.id, req.query.kind);
+      const profile = requireProfile(req);
+      const period = req.query.period ?? periodOf(new Date(), profile.monthStartDay);
+      const categories = await categoriesRepository.listByProfile(profile.id, req.query.kind);
 
       const items = await Promise.all(
-        categories.map((c) => withStats(user.id, user.monthStartDay, period, c)),
+        categories.map((c) => withStats(profile.id, profile.monthStartDay, period, c)),
       );
       return { period, items };
     },
@@ -101,18 +101,18 @@ export async function categoriesRoutes(app: FastifyInstance): Promise<void> {
 
   /** Новая категория расхода или источник дохода — сразу с планом на месяц. */
   app.post('/categories', async (req, reply) => {
-    const user = requireUser(req);
+    const profile = requireProfile(req);
     const input = parseOrThrow(createCategorySchema, req.body);
-    const period = periodOf(new Date(), user.monthStartDay);
+    const period = periodOf(new Date(), profile.monthStartDay);
 
-    const existing = await categoriesRepository.listByUser(user.id, input.kind);
+    const existing = await categoriesRepository.listByProfile(profile.id, input.kind);
     if (existing.length >= MAX_CATEGORIES_PER_KIND) {
       throw new ConflictError(
         `Больше ${MAX_CATEGORIES_PER_KIND} ${input.kind === 'expense' ? 'категорий' : 'источников'} не поддерживается`,
       );
     }
 
-    const category = await categoriesRepository.create(user.id, {
+    const category = await categoriesRepository.create(profile.id, {
       name: input.name,
       kind: input.kind,
       icon: input.icon ?? null,
@@ -123,7 +123,7 @@ export async function categoriesRoutes(app: FastifyInstance): Promise<void> {
 
     // План осмыслен только для расходов: у источника дохода лимита не бывает.
     const limit = category.kind === 'expense' ? input.limitAmount ?? null : null;
-    if (limit !== null) await persistLimit(user.id, category.id, period, limit);
+    if (limit !== null) await persistLimit(profile.id, category.id, period, limit);
 
     // Новой категории статистика известна без запросов: трат по ней ещё нет.
     const isExpense = category.kind === 'expense';
@@ -138,10 +138,10 @@ export async function categoriesRoutes(app: FastifyInstance): Promise<void> {
 
   /** Правка категории: оформление и запланированный бюджет на период. */
   app.patch<{ Params: { id: string } }>('/categories/:id', async (req) => {
-    const user = requireUser(req);
+    const profile = requireProfile(req);
     const input = parseOrThrow(updateCategorySchema, req.body);
-    const category = await categoriesRepository.findOwned(pool, user.id, req.params.id);
-    const period = input.period ?? periodOf(new Date(), user.monthStartDay);
+    const category = await categoriesRepository.findOwned(pool, profile.id, req.params.id);
+    const period = input.period ?? periodOf(new Date(), profile.monthStartDay);
 
     if (input.limitAmount !== undefined && category.kind !== 'expense') {
       throw new ValidationError('Лимит задаётся только категориям расхода');
@@ -150,7 +150,7 @@ export async function categoriesRoutes(app: FastifyInstance): Promise<void> {
     const touchesLooks =
       input.name !== undefined || input.icon !== undefined || input.color !== undefined;
     const updated = touchesLooks
-      ? await categoriesRepository.update(user.id, category.id, {
+      ? await categoriesRepository.update(profile.id, category.id, {
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.icon !== undefined ? { icon: input.icon } : {}),
           ...(input.color !== undefined ? { color: input.color } : {}),
@@ -159,21 +159,21 @@ export async function categoriesRoutes(app: FastifyInstance): Promise<void> {
 
     // undefined — поле не пришло, план не трогаем; null — пользователь его снял.
     if (input.limitAmount !== undefined) {
-      await persistLimit(user.id, category.id, period, input.limitAmount);
+      await persistLimit(profile.id, category.id, period, input.limitAmount);
     }
 
-    return withStats(user.id, user.monthStartDay, period, updated);
+    return withStats(profile.id, profile.monthStartDay, period, updated);
   });
 
   /** Установка/обновление лимита категории на период. */
   app.put<{ Params: { id: string } }>('/categories/:id/limit', async (req) => {
-    const user = requireUser(req);
+    const profile = requireProfile(req);
     const input = parseOrThrow(setLimitSchema, req.body);
-    const category = await categoriesRepository.findOwned(pool, user.id, req.params.id);
+    const category = await categoriesRepository.findOwned(pool, profile.id, req.params.id);
     if (category.kind !== 'expense') {
       throw new ValidationError('Лимит задаётся только категориям расхода');
     }
-    await persistLimit(user.id, category.id, input.period, input.limitAmount);
+    await persistLimit(profile.id, category.id, input.period, input.limitAmount);
     return { categoryId: category.id, period: input.period, limitAmount: input.limitAmount };
   });
 }

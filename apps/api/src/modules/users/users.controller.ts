@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { authenticate } from '../../shared/auth.js';
-import { requireUser } from '../../shared/current-user.js';
+import { requireUser } from '../../shared/current-profile.js';
 
 export async function usersRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authenticate);

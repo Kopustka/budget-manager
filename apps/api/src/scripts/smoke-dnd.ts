@@ -68,15 +68,16 @@ function check(name: string, ok: boolean, detail?: unknown): void {
  * Затрагивает ТОЛЬКО пользователя с TEST_TELEGRAM_ID.
  */
 async function resetTestUser(): Promise<void> {
+  // Область данных — активный профиль, а не сам пользователь.
   const { rows } = await pool.query<{ id: string }>(
-    'SELECT id FROM users WHERE telegram_id = $1',
+    'SELECT active_profile_id AS id FROM users WHERE telegram_id = $1',
     [TEST_TELEGRAM_ID],
   );
-  const userId = rows[0]?.id;
-  if (!userId) return;
-  await pool.query('DELETE FROM transactions WHERE user_id = $1', [userId]);
-  await pool.query('UPDATE wallets SET balance = 10000000 WHERE user_id = $1', [userId]);
-  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${userId}:*`);
+  const profileId = rows[0]?.id;
+  if (!profileId) return;
+  await pool.query('DELETE FROM transactions WHERE profile_id = $1', [profileId]);
+  await pool.query('UPDATE wallets SET balance = 10000000 WHERE profile_id = $1', [profileId]);
+  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:profile:${profileId}:*`);
   if (keys.length > 0) await redis.del(...keys);
 }
 
@@ -87,9 +88,14 @@ async function main(): Promise<void> {
   console.log('\n[1] Здоровье и профиль');
   const health = await api('GET', '/health');
   check('/health = 200', health.status === 200, health.data);
-  const me = await api<{ id: string; telegramId: number }>('GET', '/api/me');
+  const me = await api<{ id: string; telegramId: number; activeProfileId: string }>(
+    'GET',
+    '/api/me',
+  );
   check('/api/me авторизован по initData', me.status === 200, me.data);
-  const userId = me.data.id;
+  // Ключи Redis и строки таблиц адресуются профилем — его и берём.
+  const userId = me.data.activeProfileId;
+  check('у пользователя есть активный профиль', Boolean(userId), me.data);
 
   const noAuth = await fetch(`${BASE}/api/me`);
   check('без initData — 401', noAuth.status === 401);
@@ -191,7 +197,7 @@ async function main(): Promise<void> {
   console.log('\n[8] Откат транзакции при ошибке (недостаточно средств)');
   const { rows: beforeRows } = await pool.query<{ balance: string; cnt: string }>(
     `SELECT (SELECT balance FROM wallets WHERE id = $1) AS balance,
-            (SELECT count(*) FROM transactions WHERE user_id = $2) AS cnt`,
+            (SELECT count(*) FROM transactions WHERE profile_id = $2) AS cnt`,
     [wallet.id, userId],
   );
   const tooBig = await api('POST', '/api/dnd', {
@@ -204,7 +210,7 @@ async function main(): Promise<void> {
   });
   const { rows: afterRows } = await pool.query<{ balance: string; cnt: string }>(
     `SELECT (SELECT balance FROM wallets WHERE id = $1) AS balance,
-            (SELECT count(*) FROM transactions WHERE user_id = $2) AS cnt`,
+            (SELECT count(*) FROM transactions WHERE profile_id = $2) AS cnt`,
     [wallet.id, userId],
   );
   check('перерасход отклонён (409)', tooBig.status === 409, tooBig.data);
@@ -231,7 +237,7 @@ async function main(): Promise<void> {
   const redisSpentAfterEdit = await redis.hget(rkey.spent(userId, period), limited.id);
   const pgSpent = await pool.query<{ total: string }>(
     `SELECT COALESCE(SUM(amount),0) AS total FROM transactions
-      WHERE user_id = $1 AND category_id = $2 AND type = 'spend'
+      WHERE profile_id = $1 AND category_id = $2 AND type = 'spend'
         AND to_char(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM') = $3`,
     [userId, limited.id, period],
   );

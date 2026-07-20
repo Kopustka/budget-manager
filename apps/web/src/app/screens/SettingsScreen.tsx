@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CalendarRange, Coins, Download } from 'lucide-react';
+import { AlertTriangle, CalendarRange, Coins, Download, Users } from 'lucide-react';
 import { CURRENCIES, MAX_MONTH_START_DAY, currencyInfo } from '@budget/shared';
 import { settingsApi } from '@/entities/settings/api';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -10,6 +10,7 @@ import { Button } from '@/shared/ui/Button';
 import { BottomSheet } from '@/shared/ui/BottomSheet';
 import { ApiError } from '@/shared/api/client';
 import { haptics } from '@/shared/lib/telegram';
+import { ProfilesSection } from '@/features/profiles/ProfilesSection';
 import { cn } from '@/shared/ui/cn';
 
 /** Настройки: валюта, начало расчётного месяца и выгрузка операций. */
@@ -44,6 +45,14 @@ export function SettingsScreen() {
   return (
     <main className="mx-auto max-w-md px-4 pt-safe">
       <h1 className="pt-2 pb-4 text-sm text-ink-muted">Настройки</h1>
+
+      <Section
+        icon={<Users size={18} strokeWidth={1.75} />}
+        title="Профили"
+        hint="Отдельные бюджеты со своими кошельками, категориями и валютой"
+      >
+        <ProfilesSection />
+      </Section>
 
       <Section icon={<Coins size={18} strokeWidth={1.75} />} title="Валюта">
         <GlassCard className="flex items-center gap-3">
@@ -226,14 +235,9 @@ function CurrencySheet({
     setError(null);
     try {
       const result = await settingsApi.changeCurrency({ currency: target, rate: parsedRate });
+      // load() уже приносит настройки профиля с сервера, включая новую валюту —
+      // собирать ответ повторно из кусков стора значит рисковать разъездом.
       await load();
-      apply({
-        currency: result.currency,
-        monthStartDay: useSettingsStore.getState().monthStartDay,
-        period: useSettingsStore.getState().period,
-        periodStart: useSettingsStore.getState().periodStart ?? '',
-        periodEnd: useSettingsStore.getState().periodEnd ?? '',
-      });
       await reloadBudget();
       haptics.success();
       notify(`Пересчитано операций: ${result.transactions}`, 'success');

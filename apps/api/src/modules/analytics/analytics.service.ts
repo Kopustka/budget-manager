@@ -4,6 +4,7 @@ import type {
   VelocityResponse,
   VelocityPoint,
 } from '@budget/shared';
+import type { ProfileScope } from '../../modules/profiles/profiles.repository.js';
 import { pool } from '../../config/db.js';
 import { categoriesRepository } from '../categories/categories.repository.js';
 import { transactionsRepository } from '../transactions/transactions.repository.js';
@@ -18,12 +19,12 @@ import {
 /** Аналитика периода. Читает из PostgreSQL — точные цифры важнее миллисекунд. */
 export const analyticsService = {
   /** Распределение трат по категориям за период (donut). */
-  async distribution(user: User, period: string): Promise<DistributionResponse> {
+  async distribution(profile: ProfileScope, period: string): Promise<DistributionResponse> {
     assertPeriod(period);
-    const userId = user.id;
+    const profileId = profile.id;
     const [rows, categories] = await Promise.all([
-      transactionsRepository.spentByCategory(userId, period, user.monthStartDay),
-      categoriesRepository.listByUser(userId, 'expense'),
+      transactionsRepository.spentByCategory(profileId, period, profile.monthStartDay),
+      categoriesRepository.listByProfile(profileId, 'expense'),
     ]);
     const byId = new Map(categories.map((c) => [c.id, c]));
     const total = rows.reduce((sum, r) => sum + r.total, 0);
@@ -57,25 +58,25 @@ export const analyticsService = {
    * Velocity: факт нарастающим итогом против идеальной равномерной кривой
    * (сумма лимитов, размазанная по дням периода).
    */
-  async velocity(user: User, period: string): Promise<VelocityResponse> {
+  async velocity(profile: ProfileScope, period: string): Promise<VelocityResponse> {
     assertPeriod(period);
-    const userId = user.id;
+    const profileId = profile.id;
     const [daily, budgetRow] = await Promise.all([
-      transactionsRepository.spentByDay(userId, period, user.monthStartDay),
+      transactionsRepository.spentByDay(profileId, period, profile.monthStartDay),
       pool.query<{ total: string | null }>(
         `SELECT COALESCE(SUM(cl.limit_amount), 0) AS total
            FROM category_limits cl
            JOIN categories c ON c.id = cl.category_id
-          WHERE c.user_id = $1 AND cl.period = $2`,
-        [userId, period],
+          WHERE c.profile_id = $1 AND cl.period = $2`,
+        [profileId, period],
       ),
     ]);
 
     const budgetRaw = Number(budgetRow.rows[0]?.total ?? 0);
     const budget = budgetRaw > 0 ? budgetRaw : null;
-    const days = daysInPeriod(period, user.monthStartDay);
+    const days = daysInPeriod(period, profile.monthStartDay);
     const spentByDay = new Map(daily.map((d) => [d.day, d.total]));
-    const { start } = periodRange(period, user.monthStartDay);
+    const { start } = periodRange(period, profile.monthStartDay);
 
     const points: VelocityPoint[] = [];
     let cumulative = 0;
@@ -97,8 +98,8 @@ export const analyticsService = {
     // число месяца уже не совпадает с позицией внутри периода.
     const now = new Date();
     const index =
-      periodOf(now, user.monthStartDay) === period
-        ? Math.min(dayIndexInPeriod(now, period, user.monthStartDay), days - 1)
+      periodOf(now, profile.monthStartDay) === period
+        ? Math.min(dayIndexInPeriod(now, period, profile.monthStartDay), days - 1)
         : days - 1;
     const at = points[index];
     const pace = at ? at.cumulative - at.ideal : 0;

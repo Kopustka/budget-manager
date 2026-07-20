@@ -5,6 +5,7 @@ import { redis } from '../config/redis.js';
 import { rkey } from '../redis/keys.js';
 import { periodOf } from '../shared/period.js';
 import { usersRepository } from '../modules/users/users.repository.js';
+import { profilesRepository } from '../modules/profiles/profiles.repository.js';
 import { categoriesRepository } from '../modules/categories/categories.repository.js';
 import { transactionsService } from '../modules/transactions/transactions.service.js';
 import { cache } from '../redis/cache.js';
@@ -47,28 +48,30 @@ async function limitAlerts(): Promise<string[]> {
 
 async function main(): Promise<void> {
   const user = await usersRepository.upsertByTelegram({ telegramId: TEST_TELEGRAM_ID });
-  const period = periodOf(new Date(), user.monthStartDay);
+  const profile = await profilesRepository.findActiveScope(user.id);
+  if (!profile) throw new Error('У тестового пользователя нет активного профиля');
+  const period = periodOf(new Date(), profile.monthStartDay);
 
   // Чистый лист: остатки прошлого прогона исказили бы и spent, и дедупликацию.
-  await pool.query('DELETE FROM transactions WHERE user_id = $1', [user.id]);
-  await pool.query('UPDATE wallets SET balance = 50000000 WHERE user_id = $1', [user.id]);
-  const stale = await redis.keys(`${env.REDIS_NAMESPACE}:user:${user.id}:*`);
+  await pool.query('DELETE FROM transactions WHERE profile_id = $1', [profile.id]);
+  await pool.query('UPDATE wallets SET balance = 50000000 WHERE profile_id = $1', [profile.id]);
+  const stale = await redis.keys(`${env.REDIS_NAMESPACE}:profile:${profile.id}:*`);
   if (stale.length > 0) await redis.del(...stale);
   await redis.del(rkey.botAlertsQueue);
 
   const { rows: wallets } = await pool.query<{ id: string }>(
-    'SELECT id FROM wallets WHERE user_id = $1 LIMIT 1',
-    [user.id],
+    'SELECT id FROM wallets WHERE profile_id = $1 LIMIT 1',
+    [profile.id],
   );
   const { rows: cats } = await pool.query<{ id: string; name: string }>(
-    `SELECT id, name FROM categories WHERE user_id = $1 AND kind = 'expense' LIMIT 1`,
-    [user.id],
+    `SELECT id, name FROM categories WHERE profile_id = $1 AND kind = 'expense' LIMIT 1`,
+    [profile.id],
   );
   const walletId = wallets[0]!.id;
   const category = cats[0]!;
 
   const spend = (amount: number) =>
-    transactionsService.processDnd(user, {
+    transactionsService.processDnd(profile, {
       source: 'wallet',
       target: 'expense',
       walletId,
@@ -88,7 +91,7 @@ async function main(): Promise<void> {
 
   // Лимит в быстрый слой пишет контроллер; здесь дублируем этот шаг вручную,
   // потому что дёргаем репозиторий напрямую, в обход HTTP.
-  cache.setLimit(user.id, period, category.id, LIMIT);
+  cache.setLimit(profile.id, period, category.id, LIMIT);
 
   console.log('\n[2] Трата до 85% — статус SAFE, очередь пуста');
   await spend(LIMIT * 0.5);
@@ -97,7 +100,7 @@ async function main(): Promise<void> {
 
   console.log('\n[3] Пограничная зона 85–99% — WARNING, но пуша всё ещё нет');
   await spend(LIMIT * 0.4);
-  const spent90 = await cache.getSpent(user.id, period, category.id);
+  const spent90 = await cache.getSpent(profile.id, period, category.id);
   check('spent в Redis верен', spent90 === LIMIT * 0.9, spent90);
   check('статус WARNING', limitStatus(spent90, LIMIT) === 'WARNING');
   // Порог 85% красит карточку, но не будит бота: уведомление только при 100%.
@@ -105,7 +108,7 @@ async function main(): Promise<void> {
 
   console.log('\n[4] Ровно 100% — EXCEEDED и пуш limit_reached');
   await spend(LIMIT * 0.1);
-  const spentFull = await cache.getSpent(user.id, period, category.id);
+  const spentFull = await cache.getSpent(profile.id, period, category.id);
   check('spent равен лимиту', spentFull === LIMIT, spentFull);
   check('статус EXCEEDED', limitStatus(spentFull, LIMIT) === 'EXCEEDED');
   check(
@@ -135,8 +138,8 @@ async function main(): Promise<void> {
 
   console.log('\n[7] Снятие лимита убирает его и из быстрого слоя');
   await categoriesRepository.removeLimit(category.id, period);
-  cache.clearLimit(user.id, period, category.id);
-  const clearedLimit = await cache.getLimit(user.id, period, category.id);
+  cache.clearLimit(profile.id, period, category.id);
+  const clearedLimit = await cache.getLimit(profile.id, period, category.id);
   check('лимита в Redis нет', clearedLimit === null, clearedLimit);
   check('статус NONE', limitStatus(spentFull, null) === 'NONE');
 
