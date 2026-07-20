@@ -59,7 +59,7 @@ export function DayPicker({ transactions }: DayPickerProps) {
     <div className="pb-1">
       <div
         ref={scrollerRef}
-        className="flex gap-2 overflow-x-auto scroll-smooth pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex gap-2 overflow-x-auto overscroll-x-contain scroll-smooth pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {days.map((date) => {
           const key = localDayKey(date);

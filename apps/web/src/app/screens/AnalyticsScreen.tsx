@@ -216,7 +216,7 @@ function DistributionTable({ items, total }: { items: DonutSlice[]; total: numbe
     return <p className="py-6 text-center text-sm text-ink-faint">Трат за месяц нет</p>;
   }
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto overscroll-x-contain">
       <table className="w-full text-sm">
         <caption className="sr-only">Распределение трат по категориям за месяц</caption>
         <thead>

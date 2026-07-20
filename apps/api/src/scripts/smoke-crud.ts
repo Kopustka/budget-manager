@@ -68,34 +68,36 @@ function check(name: string, ok: boolean, detail?: unknown): void {
  * Заодно убираем сущности браузерного прогона (`e2e %`): у него нет доступа к
  * базе, а созданные им кошельки копятся до потолка в 12 штук.
  */
-async function cleanup(userId: string): Promise<void> {
+async function cleanup(profileId: string): Promise<void> {
   const patterns = [`${PREFIX}%`, 'e2e %'];
   await pool.query(
     `DELETE FROM transactions WHERE profile_id = $1
        AND category_id IN (SELECT id FROM categories WHERE profile_id = $1 AND name LIKE ANY($2))`,
-    [userId, patterns],
+    [profileId, patterns],
   );
   await pool.query(
     `DELETE FROM transactions WHERE profile_id = $1
        AND wallet_id IN (SELECT id FROM wallets WHERE profile_id = $1 AND name LIKE ANY($2))`,
-    [userId, patterns],
+    [profileId, patterns],
   );
   await pool.query('DELETE FROM categories WHERE profile_id = $1 AND name LIKE ANY($2)', [
-    userId,
+    profileId,
     patterns,
   ]);
   await pool.query('DELETE FROM wallets WHERE profile_id = $1 AND name LIKE ANY($2)', [
-    userId,
+    profileId,
     patterns,
   ]);
-  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${userId}:*`);
+  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:profile:${profileId}:*`);
   if (keys.length > 0) await redis.del(...keys);
 }
 
 async function main(): Promise<void> {
-  const me = await api<{ id: string }>('GET', '/api/me');
+  const me = await api<{ id: string; activeProfileId: string }>('GET', '/api/me');
   if (me.status !== 200) throw new Error('API недоступен или initData не принят');
-  const userId = me.data.id;
+  // Область данных — активный профиль, а не пользователь: по нему адресуются
+  // и строки таблиц, и ключи Redis.
+  const userId = me.data.activeProfileId;
   await cleanup(userId);
 
   console.log('\n[1] Создание кошелька');
