@@ -13,16 +13,17 @@ import { useUiStore } from '@/stores/useUiStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { GlassCard } from '@/shared/ui/GlassCard';
 import { Money } from '@/shared/ui/Money';
-import { LimitBar } from '@/shared/ui/LimitBar';
 import { CategoryIcon } from '@/shared/ui/CategoryIcon';
 import { Skeleton, SkeletonCard } from '@/shared/ui/Skeleton';
 import { Button } from '@/shared/ui/Button';
 import { formatDay, formatRelativeDay, formatTime } from '@/shared/lib/format';
 import { haptics, isInsideTelegram } from '@/shared/lib/telegram';
 import { CategorySheet } from '@/features/category-details/CategorySheet';
+import { CategoryCard } from '@/features/category-card/CategoryCard';
 import { DragNode, DropNode } from '@/features/dnd-matrix/dnd-nodes';
 import { CategoryPager } from '@/features/category-pager/CategoryPager';
 import { CreateEntitySheet, type EntityKind } from '@/features/entity-editor/CreateEntitySheet';
+import { EditCategorySheet } from '@/features/entity-editor/EditCategorySheet';
 import { OperationSheet } from '@/features/tx-editor/OperationSheet';
 import { EditTransactionSheet } from '@/features/tx-editor/EditTransactionSheet';
 import { QuickAddSheet } from '@/features/tx-editor/QuickAddSheet';
@@ -45,6 +46,7 @@ export function HomeScreen() {
   const periodEnd = useSettingsStore((s) => s.periodEnd);
 
   const [openCategory, setOpenCategory] = useState<CategoryWithStats | null>(null);
+  const [editingCategory, setEditingCategory] = useState<CategoryWithStats | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [quickAdd, setQuickAdd] = useState(false);
   const [creating, setCreating] = useState<EntityKind | null>(null);
@@ -189,36 +191,7 @@ export function HomeScreen() {
           <CategoryPager
             items={expenses}
             keyOf={(c) => c.id}
-            renderItem={(c) => (
-              <DropNode kind="expense" id={c.id} className="h-full">
-                {({ isOver, isAllowed }) => (
-                  <GlassCard
-                    danger={c.isOverdraft}
-                    highlighted={isOver && isAllowed}
-                    ariaLabel={`Категория ${c.name}, подробности`}
-                    onClick={() => {
-                      haptics.selection();
-                      setOpenCategory(c);
-                    }}
-                    className="flex h-full flex-col gap-3"
-                  >
-                    <div className="flex items-center gap-2">
-                      <CategoryIcon name={c.icon} color={c.color} size={20} />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{c.name}</span>
-                    </div>
-                    <Money value={c.spent ?? 0} compact className="text-xl font-semibold" />
-                    {/* mt-auto прижимает прогресс к низу — карточки в сетке выглядят выровненными */}
-                    <div className="mt-auto">
-                      {c.limit !== null ? (
-                        <LimitBar spent={c.spent ?? 0} limit={c.limit} />
-                      ) : (
-                        <p className="text-xs text-ink-faint">Без лимита</p>
-                      )}
-                    </div>
-                  </GlassCard>
-                )}
-              </DropNode>
-            )}
+            renderItem={(c) => <CategoryCard category={c} onOpen={setOpenCategory} />}
           />
         )}
         {/* Кнопка под пейджером, а не плиткой внутри: она не должна занимать
@@ -304,7 +277,17 @@ export function HomeScreen() {
         <Plus size={26} strokeWidth={2} aria-hidden="true" />
       </button>
 
-      <CategorySheet category={openCategory} onClose={() => setOpenCategory(null)} />
+      <CategorySheet
+        category={openCategory}
+        onClose={() => setOpenCategory(null)}
+        // Одна шторка поверх другой не открывается: детали уступают место правке
+        // и возвращаться в них после сохранения незачем — данные уже изменились.
+        onEdit={(category) => {
+          setOpenCategory(null);
+          setEditingCategory(category);
+        }}
+      />
+      <EditCategorySheet category={editingCategory} onClose={() => setEditingCategory(null)} />
       <OperationSheet />
       <EditTransactionSheet transaction={editing} onClose={() => setEditing(null)} />
       <QuickAddSheet open={quickAdd} onClose={() => setQuickAdd(false)} />

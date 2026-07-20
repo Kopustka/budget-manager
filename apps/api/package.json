@@ -15,6 +15,7 @@
     "bot": "tsx src/bot/index.ts",
     "worker": "tsx src/workers/index.ts",
     "smoke:alerts": "REDIS_NAMESPACE=finapp-smoke tsx src/scripts/smoke-alerts.ts",
+    "smoke:limits": "REDIS_NAMESPACE=finapp-smoke tsx src/scripts/smoke-limits.ts",
     "smoke:bot": "tsx src/scripts/smoke-bot.ts",
     "smoke:settings": "REDIS_NAMESPACE=finapp-smoke tsx src/scripts/smoke-settings.ts",
     "smoke:crud": "tsx src/scripts/smoke-crud.ts"

@@ -41,19 +41,56 @@ export const createWalletSchema = z.object({
 });
 export type CreateWalletInput = z.infer<typeof createWalletSchema>;
 
+/** Потолок суммы лимита — та же граница, что у стартового баланса кошелька. */
+export const MAX_LIMIT_AMOUNT = 1_000_000_000_00;
+
+const periodSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Период в формате YYYY-MM');
+
+/**
+ * Сумма запланированного бюджета. null — осознанное «лимита нет»: им фронт
+ * снимает ранее заданный план, и это не то же самое, что отсутствие поля
+ * («не трогай лимит») в PATCH.
+ */
+const limitAmountSchema = z
+  .number()
+  .int('Лимит — в минорных единицах (integer)')
+  .nonnegative('Лимит не может быть отрицательным')
+  .max(MAX_LIMIT_AMOUNT, 'Слишком большой лимит — проверьте сумму');
+
 /** POST /api/categories — новая категория расхода или источник дохода */
 export const createCategorySchema = z.object({
   name: z.string().trim().min(1, 'Введите название').max(40, 'Слишком длинное название'),
   kind: z.enum(['income', 'expense']),
   icon: z.enum(CATEGORY_ICONS as unknown as [string, ...string[]]).optional(),
   color: z.enum(CATEGORY_COLORS as unknown as [string, ...string[]]).optional(),
+  /**
+   * Запланированный бюджет на текущий период. Задаётся сразу при создании,
+   * чтобы не заставлять пользователя открывать вторую форму ради одной суммы.
+   * Для источников дохода игнорируется: план расходов у них не бывает.
+   */
+  limitAmount: limitAmountSchema.optional(),
 });
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 
+/**
+ * PATCH /api/categories/:id — правка категории и её плана.
+ * Все поля опциональны: шторка шлёт только то, что пользователь менял.
+ */
+export const updateCategorySchema = z.object({
+  name: z.string().trim().min(1, 'Введите название').max(40, 'Слишком длинное название').optional(),
+  icon: z.enum(CATEGORY_ICONS as unknown as [string, ...string[]]).optional(),
+  color: z.enum(CATEGORY_COLORS as unknown as [string, ...string[]]).optional(),
+  /** Период правки лимита. Без него — текущий период пользователя. */
+  period: periodSchema.optional(),
+  /** null снимает лимит, число — задаёт, отсутствие поля — не трогает. */
+  limitAmount: limitAmountSchema.nullable().optional(),
+});
+export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
+
 /** PUT /api/categories/:id/limit — установка лимита на период */
 export const setLimitSchema = z.object({
-  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Период в формате YYYY-MM'),
-  limitAmount: z.number().int().nonnegative(),
+  period: periodSchema,
+  limitAmount: limitAmountSchema,
 });
 export type SetLimitInput = z.infer<typeof setLimitSchema>;
 

@@ -2,9 +2,15 @@ import type { User } from '@budget/shared';
 import { pool } from '../../config/db.js';
 import { redis } from '../../config/redis.js';
 import { rkey } from '../../redis/keys.js';
+import { scripts } from '../../redis/scripts.js';
 import { dayIndexInPeriod, daysInPeriod, periodRange } from '../../shared/period.js';
 import { alertsQueue, pushOnce } from './alerts.queue.js';
-import type { AlertBase, BotAlert } from './alerts.types.js';
+import type {
+  AlertBase,
+  BotAlert,
+  LimitReachedAlert,
+  OverdraftAlert,
+} from './alerts.types.js';
 
 /** Во сколько (по UTC) слать вечернее напоминание записать траты. */
 const REMINDER_HOUR_UTC = 18;
@@ -13,6 +19,16 @@ const REMINDER_HOUR_UTC = 18;
 const FAST_PACE_FACTOR = 2;
 
 const DAY_SECONDS = 24 * 60 * 60;
+
+/** Дедупликатор пуша по лимиту живёт период с запасом — по одному на категорию. */
+const LIMIT_ALERT_TTL = 31 * DAY_SECONDS;
+
+/**
+ * Плейсхолдер суммы лимита в payload'е. Настоящее значение подставит Lua-скрипт
+ * тем числом, с которым реально сравнивал: только оно объясняет, почему пуш
+ * сработал. Лимит неотрицателен, поэтому -1 не встретится в данных.
+ */
+const LIMIT_PLACEHOLDER = -1;
 
 /** Общие поля адресации для любого пуша. */
 function base(user: User): AlertBase {
@@ -26,45 +42,45 @@ function base(user: User): AlertBase {
 
 export const alertsService = {
   /**
-   * Оценить триггеры после списания и поставить пуши в очередь.
+   * Зафиксировать трату в быстром слое и проверить лимит категории — одним
+   * атомарным EVAL (см. redis/scripts.ts).
    *
-   * Вызывается после коммита операции и никогда её не роняет: уведомление —
-   * побочный эффект, его сбой не повод откатывать деньги (вызывающий код
-   * гасит исключения).
+   * Записать spent, сравнить его с лимитом и поставить пуш нельзя порознь:
+   * между round-trip'ами влезает параллельная трата по той же категории, и
+   * превышение либо остаётся незамеченным, либо порождает два уведомления.
+   *
+   * Возвращает вид поставленного пуша или null, если повода не было (или такой
+   * пуш за период уже отправляли).
    */
-  async evaluateAfterSpend(input: {
+  async settleSpend(input: {
     user: User;
     categoryId: string;
     categoryName: string;
+    /** Точный spent за период, посчитанный в PostgreSQL после коммита. */
     spent: number;
+    /** Лимит, известный вызывающему; идёт в дело только при промахе кэша. */
     limit: number | null;
     period: string;
-    occurredAt: Date;
-  }): Promise<string[]> {
-    const fired: string[] = [];
-    const { user, categoryName, spent, limit, period } = input;
+  }): Promise<'overdraft' | 'limit_reached' | null> {
+    const { user, categoryId, categoryName, spent, limit, period } = input;
+    const common = { ...base(user), categoryName, spent, limit: LIMIT_PLACEHOLDER };
+    const scope = `${period}:${categoryId}`;
 
-    if (limit !== null && spent > limit) {
-      // Превышение — самое важное событие, шлём один раз на категорию за период.
-      const ok = await pushOnce(
-        { ...base(user), kind: 'overdraft', categoryName, spent, limit },
-        `${period}:${input.categoryId}`,
-        31 * DAY_SECONDS,
-      );
-      if (ok) fired.push('overdraft');
-    } else if (limit !== null && spent >= limit) {
-      const ok = await pushOnce(
-        { ...base(user), kind: 'limit_reached', categoryName, spent, limit },
-        `${period}:${input.categoryId}`,
-        31 * DAY_SECONDS,
-      );
-      if (ok) fired.push('limit_reached');
-    }
+    const [, kind] = await scripts.settleSpend(
+      rkey.spent(user.id, period),
+      rkey.limits(user.id, period),
+      rkey.alertOnce(user.id, 'overdraft', scope),
+      rkey.alertOnce(user.id, 'limit_reached', scope),
+      rkey.botAlertsQueue,
+      categoryId,
+      String(spent),
+      limit === null ? '' : String(limit),
+      String(LIMIT_ALERT_TTL),
+      JSON.stringify({ ...common, kind: 'overdraft' } satisfies OverdraftAlert),
+      JSON.stringify({ ...common, kind: 'limit_reached' } satisfies LimitReachedAlert),
+    );
 
-    const pace = await this.checkDailyPace(user, input.occurredAt, period);
-    if (pace) fired.push('fast_pace');
-
-    return fired;
+    return kind === '' ? null : (kind as 'overdraft' | 'limit_reached');
   },
 
   /** Сравнить траты за день с равномерной дневной долей бюджета. */

@@ -11,6 +11,7 @@ import { useCurrency } from '@/shared/lib/useCurrency';
 import { currencyInfo } from '@budget/shared';
 import { cn } from '@/shared/ui/cn';
 import { AmountField, parseAmount } from '@/features/tx-editor/AmountField';
+import { LimitField } from './LimitField';
 
 /** Что создаём. Кошелёк и категории живут в разных таблицах, но форма общая. */
 export type EntityKind = 'wallet' | 'expense' | 'income';
@@ -47,6 +48,7 @@ export function CreateEntitySheet({
 
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
+  const [limit, setLimit] = useState('');
   const [icon, setIcon] = useState<string>(CATEGORY_ICONS[0]);
   const [color, setColor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +59,7 @@ export function CreateEntitySheet({
     if (kind) {
       setName('');
       setBalance('');
+      setLimit('');
       setIcon(kind === 'income' ? 'banknote' : CATEGORY_ICONS[0]);
       setColor(null);
       setError(null);
@@ -83,11 +86,15 @@ export function CreateEntitySheet({
         // Пустое поле — это ноль, а не ошибка: кошелёк можно завести пустым.
         await addWallet({ name: trimmed, balance: balance.trim() ? (parseAmount(balance) ?? 0) : 0 });
       } else {
+        // Пустое поле бюджета — «без лимита»: отправляем не ноль (он означал бы
+        // «тратить нельзя»), а вовсе не отправляем поле.
+        const limitAmount = kind === 'expense' ? parseAmount(limit) : null;
         await addCategory({
           name: trimmed,
           kind,
           icon,
           ...(color ? { color } : {}),
+          ...(limitAmount !== null ? { limitAmount } : {}),
         });
       }
       haptics.success();
@@ -184,6 +191,13 @@ export function CreateEntitySheet({
               категории не слились.
             </p>
           </div>
+
+          {/* План есть только у расходов: у источника дохода лимита не бывает */}
+          {kind === 'expense' && (
+            <div className="pt-4">
+              <LimitField value={limit} onChange={setLimit} />
+            </div>
+          )}
         </>
       )}
 
