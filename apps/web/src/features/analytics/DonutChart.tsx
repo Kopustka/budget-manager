@@ -17,6 +17,8 @@ export interface DonutSlice {
 interface DonutChartProps {
   slices: DonutSlice[];
   total: number;
+  /** Свободный остаток за вычетом обязательств календаря; null — календарь пуст. */
+  free?: number | null;
 }
 
 const SIZE = 200;
@@ -34,7 +36,7 @@ const GAP = 2;
  * рядом всегда легенда с названием, суммой и долей, а по тапу сегмент
  * подсвечивается и его значение уезжает в центр.
  */
-export function DonutChart({ slices, total }: DonutChartProps) {
+export function DonutChart({ slices, total, free = null }: DonutChartProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const currency = useCurrency();
 
@@ -101,14 +103,23 @@ export function DonutChart({ slices, total }: DonutChartProps) {
           })}
         </svg>
 
-        {/* Центр: по умолчанию итог месяца, по тапу — выбранная категория */}
+        {/*
+          Центр: по тапу — выбранная категория, иначе свободный остаток.
+          Именно он отвечает на «сколько я могу потратить», тогда как сумма трат
+          уже видна в заголовке экрана — дублировать её здесь незачем.
+        */}
         <div className="pointer-events-none absolute inset-0 grid place-items-center px-8 text-center">
           <div>
-            <p className="text-xs text-ink-faint">{selected ? selected.name : 'Всего'}</p>
+            <p className="text-xs text-ink-faint">
+              {selected ? selected.name : free !== null ? 'Свободно до конца месяца' : 'Всего'}
+            </p>
             <Money
-              value={selected ? selected.value : total}
+              value={selected ? selected.value : (free ?? total)}
               compact
-              className="text-xl font-semibold"
+              className={cn(
+                'text-xl font-semibold',
+                !selected && free !== null && free < 0 && 'text-danger',
+              )}
             />
             {selected ? (
               <p className="tabular text-xs text-ink-muted">{formatPercent(selectedShare)}</p>

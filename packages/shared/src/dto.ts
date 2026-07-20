@@ -158,7 +158,12 @@ export interface ForecastResponse {
   /** Сумма лимитов периода; null — лимитов нет. */
   budget: number | null;
   spent: number;
-  /** Остаток бюджета; null без лимитов. Отрицательный — уже перерасход. */
+  /**
+   * Неоплаченные обязательства календаря до конца периода. Вычтены из остатка:
+   * деньги, которые точно уйдут за аренду, свободными считать нельзя.
+   */
+  upcoming: number;
+  /** Остаток бюджета за вычетом обязательств; null без лимитов. */
   remaining: number | null;
   /** Через сколько дней кончится бюджет при нынешнем темпе; null — не определить. */
   daysLeftAtBurn: number | null;
@@ -271,3 +276,65 @@ export const dndResultSchema = z.object({
   isOverdraft: z.boolean(),
 });
 export type DndResult = z.infer<typeof dndResultSchema>;
+
+/** Горизонт календаря — та же глубина, что у карусели дней. */
+export const PLANNED_WINDOW_DAYS = 30;
+
+/** Сколько правил на профиль. Ограничение смысловое: календарь должен читаться. */
+export const MAX_PLANNED = 30;
+
+const dueDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Дата в формате YYYY-MM-DD');
+
+/** POST /api/planned — новое событие календаря */
+export const createPlannedSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Введите название').max(40, 'Слишком длинное название'),
+    amount: amountSchema,
+    categoryId: z.string().uuid().nullish(),
+    walletId: z.string().uuid().nullish(),
+    recurrence: z.enum(['once', 'monthly']),
+    dueDate: dueDateSchema.optional(),
+    /** 1–28: 30-го числа в феврале не существует, и событие пропадало бы раз в год. */
+    dueDay: z.number().int().min(1).max(28).optional(),
+  })
+  .refine(
+    (v) =>
+      v.recurrence === 'once'
+        ? Boolean(v.dueDate) && v.dueDay === undefined
+        : v.dueDay !== undefined && !v.dueDate,
+    { message: 'Разовому событию нужна дата, ежемесячному — число месяца' },
+  );
+export type CreatePlannedInput = z.infer<typeof createPlannedSchema>;
+
+/** PATCH /api/planned/:id — правка суммы, названия или расписания */
+export const updatePlannedSchema = z.object({
+  name: z.string().trim().min(1).max(40).optional(),
+  amount: amountSchema.optional(),
+  categoryId: z.string().uuid().nullish(),
+  walletId: z.string().uuid().nullish(),
+  dueDate: dueDateSchema.optional(),
+  dueDay: z.number().int().min(1).max(28).optional(),
+  active: z.boolean().optional(),
+});
+export type UpdatePlannedInput = z.infer<typeof updatePlannedSchema>;
+
+/** POST /api/planned/:id/confirm | /skip — решение по конкретной дате */
+export const settlePlannedSchema = z.object({ dueDate: dueDateSchema });
+export type SettlePlannedInput = z.infer<typeof settlePlannedSchema>;
+
+/**
+ * Сводка календаря: сколько денег на самом деле свободно.
+ *
+ * `free` — то самое «сколько я могу потратить сегодня»: баланс за вычетом
+ * обязательств, которые ещё предстоит оплатить до конца расчётного периода.
+ */
+export interface PlannedSummary {
+  period: string;
+  balance: number;
+  /** Неоплаченные обязательства до конца периода. */
+  upcoming: number;
+  free: number;
+  /** Ближайшее неоплаченное событие, если есть. */
+  nextDueDate: string | null;
+  nextName: string | null;
+}

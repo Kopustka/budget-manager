@@ -43,6 +43,13 @@ export function renderAlert(alert: BotAlert): string {
         `Сегодня — ${money(alert.spentToday, alert.currency)} при равномерной норме ${money(alert.dailyBudget, alert.currency)} в день.`,
       ].join('\n');
 
+    case 'planned_due':
+      return [
+        `📅 <b>Завтра списание</b>`,
+        `«${alert.name}» — ${money(alert.amount, alert.currency)}.`,
+        `Убедитесь, что на кошельке хватает средств.`,
+      ].join('\n');
+
     case 'daily_digest': {
       const currency = alert.currency;
       const spentToday = alert.spentToday ?? 0;

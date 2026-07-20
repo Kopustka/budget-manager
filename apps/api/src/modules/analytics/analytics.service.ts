@@ -12,6 +12,7 @@ import type { ProfileScope } from '../../modules/profiles/profiles.repository.js
 import { pool } from '../../config/db.js';
 import { categoriesRepository } from '../categories/categories.repository.js';
 import { transactionsRepository } from '../transactions/transactions.repository.js';
+import { plannedService } from '../planned/planned.service.js';
 import {
   assertPeriod,
   dayIndexInPeriod,
@@ -96,7 +97,14 @@ export const analyticsService = {
     const budgetRaw = Number(budgetRow.rows[0]?.total ?? 0);
     const budget = budgetRaw > 0 ? budgetRaw : null;
     const spent = Number(spentRow.rows[0]?.total ?? 0);
-    const remaining = budget === null ? null : budget - spent;
+
+    /*
+     * Обязательства календаря вычитаем из остатка: аренда, которая спишется
+     * через пять дней, уже не свободные деньги. Без этого прогноз обещал бы
+     * запас, которого нет, — а именно от таких обещаний фича и должна защищать.
+     */
+    const upcoming = await plannedService.upcomingTotal(profile, period);
+    const remaining = budget === null ? null : budget - spent - upcoming;
 
     // Окно наблюдения: [вчера-6, сегодня) — только завершившиеся сутки.
     const todayStart = new Date(
@@ -143,6 +151,7 @@ export const analyticsService = {
       windowDays,
       budget,
       spent,
+      upcoming,
       remaining,
       daysLeftAtBurn,
       daysLeftInPeriod,

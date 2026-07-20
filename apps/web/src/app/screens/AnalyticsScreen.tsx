@@ -7,6 +7,7 @@ import type {
 } from '@budget/shared';
 import { RefreshCw, Table2, TrendingDown, TrendingUp } from 'lucide-react';
 import { analyticsApi } from '@/entities/analytics/api';
+import { usePlannedStore } from '@/stores/usePlannedStore';
 import { useBudgetStore } from '@/stores/useBudgetStore';
 import { GlassCard } from '@/shared/ui/GlassCard';
 import { Money } from '@/shared/ui/Money';
@@ -25,6 +26,7 @@ import { cn } from '@/shared/ui/cn';
 /** Аналитика месяца: на что ушли деньги (donut) и с какой скоростью (velocity). */
 export function AnalyticsScreen() {
   const categories = useBudgetStore((s) => s.categories);
+  const plannedSummary = usePlannedStore((s) => s.summary);
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
   const [velocity, setVelocity] = useState<VelocityResponse | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
@@ -215,7 +217,11 @@ export function AnalyticsScreen() {
           ) : asTable ? (
             <DistributionTable items={slices} total={distribution.total} />
           ) : (
-            <DonutChart slices={slices} total={distribution.total} />
+            <DonutChart
+              slices={slices}
+              total={distribution.total}
+              free={plannedSummary?.free ?? null}
+            />
           )}
         </GlassCard>
       </section>

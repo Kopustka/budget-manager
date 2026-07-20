@@ -11,6 +11,7 @@ import type { Transaction } from '@budget/shared';
 import { useBudgetStore } from '@/stores/useBudgetStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
+import { usePlannedStore } from '@/stores/usePlannedStore';
 import { GlassCard } from '@/shared/ui/GlassCard';
 import { Money } from '@/shared/ui/Money';
 import { CategoryIcon } from '@/shared/ui/CategoryIcon';
@@ -21,6 +22,7 @@ import { haptics, isInsideTelegram } from '@/shared/lib/telegram';
 import { useCurrency } from '@/shared/lib/useCurrency';
 import { CategorySheet } from '@/features/category-details/CategorySheet';
 import { CategoryCard } from '@/features/category-card/CategoryCard';
+import { CalendarPanel } from '@/features/calendar/CalendarPanel';
 import { DragNode, DropNode } from '@/features/dnd-matrix/dnd-nodes';
 import { CategoryPager } from '@/features/category-pager/CategoryPager';
 import { CreateEntitySheet, type EntityKind } from '@/features/entity-editor/CreateEntitySheet';
@@ -46,6 +48,7 @@ export function HomeScreen() {
   const periodStart = useSettingsStore((s) => s.periodStart);
   const periodEnd = useSettingsStore((s) => s.periodEnd);
   const currency = useCurrency();
+  const plannedSummary = usePlannedStore((s) => s.summary);
 
   const [openCategory, setOpenCategory] = useState<CategoryWithStats | null>(null);
   const [editingCategory, setEditingCategory] = useState<CategoryWithStats | null>(null);
@@ -134,19 +137,36 @@ export function HomeScreen() {
       {/* Баланс — главный объект экрана, поэтому он крупнее всего остального */}
       <header className="pt-2 pb-4">
         <div className="flex items-baseline justify-between">
-          <p className="text-sm text-ink-muted">Общий баланс</p>
+          {/* Главный вопрос — «сколько я могу потратить», а не «сколько лежит на счету».
+              Пока обязательств нет, обе величины совпадают, и заголовок это признаёт. */}
+          <p className="text-sm text-ink-muted">
+            {plannedSummary && plannedSummary.upcoming > 0
+              ? 'Свободно до конца месяца'
+              : 'Общий баланс'}
+          </p>
           <p className="text-xs tracking-wide text-ink-faint">{monthLabel}</p>
         </div>
         {loading && wallets.length === 0 ? (
           <Skeleton className="mt-1 h-10 w-48" />
         ) : (
-          <Money value={totalBalance} className="text-4xl font-semibold tracking-tight" />
+          <Money
+            value={plannedSummary ? plannedSummary.free : totalBalance}
+            className="text-4xl font-semibold tracking-tight"
+          />
+        )}
+        {plannedSummary && plannedSummary.upcoming > 0 && (
+          <p className="pt-1 text-xs text-ink-faint">
+            На счетах <Money value={plannedSummary.balance} className="text-ink-muted" />, из них{' '}
+            <Money value={plannedSummary.upcoming} className="text-ink-muted" /> уйдёт по календарю
+          </p>
         )}
         <div className="mt-3 flex gap-2">
           <SummaryChip tone="positive" label="Доход" value={monthTotals.income} />
           <SummaryChip tone="negative" label="Расход" value={monthTotals.expense} />
         </div>
       </header>
+
+      <CalendarPanel />
 
       <Section title="Источники дохода" hint="Потяните в кошелёк, чтобы зачислить">
         <div className="flex flex-wrap gap-2">

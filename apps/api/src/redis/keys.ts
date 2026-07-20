@@ -22,6 +22,12 @@ export const rkey = {
   limits: (profileId: string, period: string) =>
     `${NS}:profile:${profileId}:limits:${period}`,
 
+  /**
+   * ZSET: ближайшие неоплаченные события календаря. score = дата списания (unix).
+   * Нужен, чтобы карусель на старте Mini App не ходила за ними в PostgreSQL.
+   */
+  planned: (profileId: string) => `${NS}:profile:${profileId}:planned:30d`,
+
   /** LIST: очередь моментальных пушей боту (FIFO) */
   botAlertsQueue: `${NS}:queue:bot_alerts`,
 
