@@ -1,5 +1,15 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
-import type { CreateCategoryInput, CreateWalletInput, Transaction, Wallet } from '@budget/shared';
+import {
+  limitRatio,
+  limitStatus,
+  type CreateCategoryInput,
+  type CreateWalletInput,
+  type LimitStatus,
+  type Transaction,
+  type UpdateCategoryInput,
+  type Wallet,
+} from '@budget/shared';
 import { walletApi } from '@/entities/wallet/api';
 import { categoryApi, type CategoryWithStats } from '@/entities/category/api';
 import { transactionApi } from '@/entities/transaction/api';
@@ -19,6 +29,8 @@ interface BudgetState {
   load: () => Promise<void>;
   addWallet: (input: CreateWalletInput) => Promise<void>;
   addCategory: (input: CreateCategoryInput) => Promise<void>;
+  /** Правка категории и её месячного плана. */
+  updateCategory: (categoryId: string, input: UpdateCategoryInput) => Promise<void>;
   applyDndResult: (result: DndPatch) => void;
   applyEditResult: (result: DndPatch) => void;
   /** Удаление: транзакция уходит из ленты, баланс приходит из ответа,
@@ -72,6 +84,16 @@ export const useBudgetStore = create<BudgetState>((set) => ({
     set((state) => ({ categories: [...state.categories, category] }));
   },
 
+  // Ответ сервера содержит пересчитанные spent и limit — подставляем его целиком,
+  // а не собираем новую категорию из полей формы: смена лимита меняет и статус,
+  // а он должен считаться по тем же числам, что лежат в базе.
+  async updateCategory(categoryId, input) {
+    const updated = await categoryApi.update(categoryId, input);
+    set((state) => ({
+      categories: state.categories.map((c) => (c.id === categoryId ? updated : c)),
+    }));
+  },
+
   applyDndResult({ transaction, walletBalance, categorySpent, categoryLimit, isOverdraft }) {
     set((state) => ({
       wallets: state.wallets.map((w) =>
@@ -117,3 +139,44 @@ export const useBudgetStore = create<BudgetState>((set) => ({
     }
   },
 }));
+
+/* ──────────────────────────── Derived state ────────────────────────────
+ *
+ * Статус категории нигде не хранится — он вычисляется из плана и факта в
+ * момент чтения. Поэтому после Drag-and-Drop достаточно обновить одно число
+ * (spent), и карточка перекрашивается сама: рассинхронизироваться с данными
+ * посчитанному на лету статусу просто негде.
+ */
+
+/** План, факт и вывод по одной категории расхода. */
+export interface CategoryBudget {
+  spent: number;
+  limit: number | null;
+  /** Доля израсходованного плана (0..∞); null, если лимита нет. */
+  ratio: number | null;
+  status: LimitStatus;
+}
+
+const NO_BUDGET: CategoryBudget = { spent: 0, limit: null, ratio: null, status: 'NONE' };
+
+function budgetOf(category: CategoryWithStats): CategoryBudget {
+  const spent = category.spent ?? 0;
+  const limit = category.limit;
+  return { spent, limit, ratio: limitRatio(spent, limit), status: limitStatus(spent, limit) };
+}
+
+/**
+ * План, факт и статус одной категории.
+ *
+ * Хук, а не селектор для `useBudgetStore`: подписка сравнивает результат по
+ * ссылке, а собранный на лету объект нов при каждом вызове — React счёл бы
+ * снимок нестабильным и ушёл в бесконечный рендер. Подписываемся на саму запись
+ * категории (ссылка стабильна, пока запись не меняли) и считаем статус в useMemo.
+ *
+ * Подписка идёт по одной категории, а не по всему списку: при Drag-and-Drop
+ * меняется spent ровно одной из них, и перерисоваться должна тоже одна карточка.
+ */
+export function useCategoryBudget(categoryId: string): CategoryBudget {
+  const category = useBudgetStore((s) => s.categories.find((c) => c.id === categoryId));
+  return useMemo(() => (category ? budgetOf(category) : NO_BUDGET), [category]);
+}

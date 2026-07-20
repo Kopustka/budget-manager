@@ -157,9 +157,10 @@ export const transactionsService = {
           categoryLimit: limit,
           isOverdraft: limit !== null && spent > limit,
         } satisfies DndOutcome,
+        // spent здесь не пишем: для списания его записывает атомарный скрипт
+        // проверки лимита ниже — иначе два писателя одного поля разъезжаются.
         ops: ((pipe) => {
           cache.setWalletBalance(user.id, wallet.id, balance, pipe);
-          if (action === 'spend') cache.setSpent(user.id, period, category.id, spent, pipe);
           cache.addTxToCache(user.id, tx.id, occurredUnix, pipe);
           cache.trimTxCache(user.id, nowUnix, pipe);
         }) satisfies CacheOps,
@@ -170,19 +171,32 @@ export const transactionsService = {
       resyncFromDb(user.id, input.walletId, input.categoryId, period, user.monthStartDay),
     );
 
-    // Уведомления — побочный эффект: их сбой не должен ронять уже проведённую операцию.
     if (action === 'spend') {
+      // Фиксация spent и проверка лимита идут одним EVAL. Ронять проведённую
+      // операцию из-за Redis нельзя, но и оставлять кэш расходиться с базой —
+      // тоже: при сбое пересобираем spent из PostgreSQL.
       await alertsService
-        .evaluateAfterSpend({
+        .settleSpend({
           user,
           categoryId: input.categoryId,
           categoryName,
           spent: outcome.categorySpent,
           limit: outcome.categoryLimit,
           period,
-          occurredAt,
         })
-        .catch(() => undefined);
+        .catch(() =>
+          resyncFromDb(
+            user.id,
+            input.walletId,
+            input.categoryId,
+            period,
+            user.monthStartDay,
+          ).catch(() => undefined),
+        );
+
+      // Темп трат считается по PostgreSQL и к кэшу отношения не имеет —
+      // это чистый побочный эффект, его сбой гасим молча.
+      await alertsService.checkDailyPace(user, occurredAt, period).catch(() => undefined);
     }
 
     return outcome;

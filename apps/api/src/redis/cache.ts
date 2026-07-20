@@ -66,6 +66,14 @@ export const cache = {
     (pipe ?? redis).hset(rkey.limits(userId, period), categoryId, String(limit));
   },
 
+  /**
+   * Снять лимит. Именно удаление поля, а не запись нуля: ноль — это «тратить
+   * нельзя», и проверка лимита сработала бы на первой же копейке.
+   */
+  clearLimit(userId: string, period: string, categoryId: string, pipe?: ChainableCommander): void {
+    (pipe ?? redis).hdel(rkey.limits(userId, period), categoryId);
+  },
+
   // ── Скользящее окно истории (ZSET 30d) ──
   addTxToCache(
     userId: string,

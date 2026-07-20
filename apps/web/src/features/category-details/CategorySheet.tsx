@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, SlidersHorizontal } from 'lucide-react';
 import type { HistoryTotals, Transaction } from '@budget/shared';
 import { BottomSheet } from '@/shared/ui/BottomSheet';
 import { Button } from '@/shared/ui/Button';
@@ -17,6 +17,8 @@ import type { CategoryWithStats } from '@/entities/category/api';
 interface CategorySheetProps {
   category: CategoryWithStats | null;
   onClose: () => void;
+  /** Переход к правке названия, оформления и месячного плана. */
+  onEdit: (category: CategoryWithStats) => void;
 }
 
 /** Сколько операций показываем в шторке, прежде чем увести в «Историю». */
@@ -29,7 +31,7 @@ const PAGE = 20;
  * главного экрана: та содержит только последние записи, и в шторке пропадала бы
  * половина трат за период.
  */
-export function CategorySheet({ category, onClose }: CategorySheetProps) {
+export function CategorySheet({ category, onClose, onEdit }: CategorySheetProps) {
   const { periodStart, periodEnd } = useSettingsStore();
   const setTab = useUiStore((s) => s.setTab);
   const setHistoryFilter = useUiStore((s) => s.setHistoryFilter);
@@ -102,9 +104,22 @@ export function CategorySheet({ category, onClose }: CategorySheetProps) {
       title={category.name}
       onClose={onClose}
       footer={
-        <Button full onClick={onClose}>
-          Понятно
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            className="flex-1"
+            onClick={() => {
+              haptics.selection();
+              onEdit(category);
+            }}
+          >
+            <SlidersHorizontal size={18} strokeWidth={1.75} aria-hidden="true" />
+            {category.limit === null ? 'Задать лимит' : 'Настроить'}
+          </Button>
+          <Button className="flex-1" onClick={onClose}>
+            Понятно
+          </Button>
+        </div>
       }
     >
       <div className="flex items-center gap-3 pb-4">
