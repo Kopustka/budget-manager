@@ -9,88 +9,88 @@ import { rkey } from './keys.js';
  */
 export const cache = {
   // ── Балансы кошельков ──
-  async getWalletBalance(userId: string, walletId: string): Promise<number | null> {
-    const v = await redis.hget(rkey.wallets(userId), walletId);
+  async getWalletBalance(profileId: string, walletId: string): Promise<number | null> {
+    const v = await redis.hget(rkey.wallets(profileId), walletId);
     return v === null ? null : Number(v);
   },
 
   setWalletBalance(
-    userId: string,
+    profileId: string,
     walletId: string,
     balance: number,
     pipe?: ChainableCommander,
   ): void {
-    (pipe ?? redis).hset(rkey.wallets(userId), walletId, String(balance));
+    (pipe ?? redis).hset(rkey.wallets(profileId), walletId, String(balance));
   },
 
   // ── Накопленные траты по категории ──
-  async getSpent(userId: string, period: string, categoryId: string): Promise<number> {
-    const v = await redis.hget(rkey.spent(userId, period), categoryId);
+  async getSpent(profileId: string, period: string, categoryId: string): Promise<number> {
+    const v = await redis.hget(rkey.spent(profileId, period), categoryId);
     return v === null ? 0 : Number(v);
   },
 
   incrSpent(
-    userId: string,
+    profileId: string,
     period: string,
     categoryId: string,
     delta: number,
     pipe?: ChainableCommander,
   ): void {
-    (pipe ?? redis).hincrby(rkey.spent(userId, period), categoryId, delta);
+    (pipe ?? redis).hincrby(rkey.spent(profileId, period), categoryId, delta);
   },
 
   /** Записать spent точным значением (после пересчёта из PG — источника истины). */
   setSpent(
-    userId: string,
+    profileId: string,
     period: string,
     categoryId: string,
     spent: number,
     pipe?: ChainableCommander,
   ): void {
-    (pipe ?? redis).hset(rkey.spent(userId, period), categoryId, String(spent));
+    (pipe ?? redis).hset(rkey.spent(profileId, period), categoryId, String(spent));
   },
 
   // ── Лимиты по категории ──
-  async getLimit(userId: string, period: string, categoryId: string): Promise<number | null> {
-    const v = await redis.hget(rkey.limits(userId, period), categoryId);
+  async getLimit(profileId: string, period: string, categoryId: string): Promise<number | null> {
+    const v = await redis.hget(rkey.limits(profileId, period), categoryId);
     return v === null ? null : Number(v);
   },
 
   setLimit(
-    userId: string,
+    profileId: string,
     period: string,
     categoryId: string,
     limit: number,
     pipe?: ChainableCommander,
   ): void {
-    (pipe ?? redis).hset(rkey.limits(userId, period), categoryId, String(limit));
+    (pipe ?? redis).hset(rkey.limits(profileId, period), categoryId, String(limit));
   },
 
   /**
    * Снять лимит. Именно удаление поля, а не запись нуля: ноль — это «тратить
    * нельзя», и проверка лимита сработала бы на первой же копейке.
    */
-  clearLimit(userId: string, period: string, categoryId: string, pipe?: ChainableCommander): void {
-    (pipe ?? redis).hdel(rkey.limits(userId, period), categoryId);
+  clearLimit(profileId: string, period: string, categoryId: string, pipe?: ChainableCommander): void {
+    (pipe ?? redis).hdel(rkey.limits(profileId, period), categoryId);
   },
 
   // ── Скользящее окно истории (ZSET 30d) ──
   addTxToCache(
-    userId: string,
+    profileId: string,
     txId: string,
     occurredAtUnix: number,
     pipe?: ChainableCommander,
   ): void {
-    (pipe ?? redis).zadd(rkey.txCache30d(userId), occurredAtUnix, txId);
+    (pipe ?? redis).zadd(rkey.txCache30d(profileId), occurredAtUnix, txId);
   },
 
-  removeTxFromCache(userId: string, txId: string, pipe?: ChainableCommander): void {
-    (pipe ?? redis).zrem(rkey.txCache30d(userId), txId);
+  removeTxFromCache(profileId: string, txId: string, pipe?: ChainableCommander): void {
+    (pipe ?? redis).zrem(rkey.txCache30d(profileId), txId);
   },
 
   /** Подрезать окно: удалить всё старше (now - 30d). */
-  trimTxCache(userId: string, nowUnix: number, pipe?: ChainableCommander): void {
+  trimTxCache(profileId: string, nowUnix: number, pipe?: ChainableCommander): void {
     const cutoff = nowUnix - 30 * 24 * 60 * 60;
-    (pipe ?? redis).zremrangebyscore(rkey.txCache30d(userId), '-inf', cutoff);
+    (pipe ?? redis).zremrangebyscore(rkey.txCache30d(profileId), '-inf', cutoff);
   },
 };

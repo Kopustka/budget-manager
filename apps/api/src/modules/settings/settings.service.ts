@@ -1,4 +1,5 @@
-import type { ChangeCurrencyInput, SettingsResponse, User } from '@budget/shared';
+import type { ChangeCurrencyInput, SettingsResponse } from '@budget/shared';
+import type { ProfileScope } from '../../modules/profiles/profiles.repository.js';
 import { pool, withTransaction } from '../../config/db.js';
 import { redis } from '../../config/redis.js';
 import { env } from '../../config/env.js';
@@ -6,19 +7,19 @@ import { ValidationError } from '../../shared/errors.js';
 import { assertMonthStartDay, periodOf, periodRange } from '../../shared/period.js';
 
 /**
- * Настройки пользователя.
+ * Настройки профиля.
  *
  * Обе операции меняют смысл уже накопленных агрегатов, поэтому после каждой
  * сбрасываем производный кэш Redis: PostgreSQL — источник истины, кэш
  * пересоберётся при следующем запросе.
  */
 
-/** Удалить кэш трат и лимитов пользователя. */
-async function dropAggregateCache(userId: string): Promise<void> {
+/** Удалить кэш трат и лимитов профиля. */
+async function dropAggregateCache(profileId: string): Promise<void> {
   const patterns = [
-    `${env.REDIS_NAMESPACE}:user:${userId}:spent:*`,
-    `${env.REDIS_NAMESPACE}:user:${userId}:limits:*`,
-    `${env.REDIS_NAMESPACE}:user:${userId}:wallets`,
+    `${env.REDIS_NAMESPACE}:profile:${profileId}:spent:*`,
+    `${env.REDIS_NAMESPACE}:profile:${profileId}:limits:*`,
+    `${env.REDIS_NAMESPACE}:profile:${profileId}:wallets`,
   ];
   for (const pattern of patterns) {
     const keys = await redis.keys(pattern);
@@ -36,25 +37,27 @@ export interface CurrencyChangeResult {
 
 export const settingsService = {
   /** Текущие настройки вместе с границами периода — чтобы UI показал, что получилось. */
-  describe(user: User): SettingsResponse {
-    const period = periodOf(new Date(), user.monthStartDay);
-    const { start, end } = periodRange(period, user.monthStartDay);
+  describe(profile: ProfileScope): SettingsResponse {
+    const period = periodOf(new Date(), profile.monthStartDay);
+    const { start, end } = periodRange(period, profile.monthStartDay);
     return {
-      currency: user.currency,
-      monthStartDay: user.monthStartDay,
+      currency: profile.currency,
+      monthStartDay: profile.monthStartDay,
       period,
       periodStart: start.toISOString(),
       periodEnd: end.toISOString(),
+      profileId: profile.id,
+      profileName: profile.name,
     };
   },
 
   /** Сменить день начала расчётного месяца. */
-  async setMonthStartDay(user: User, day: number): Promise<SettingsResponse> {
+  async setMonthStartDay(profile: ProfileScope, day: number): Promise<SettingsResponse> {
     assertMonthStartDay(day);
-    await pool.query('UPDATE users SET month_start_day = $2 WHERE id = $1', [user.id, day]);
+    await pool.query('UPDATE profiles SET month_start_day = $2 WHERE id = $1', [profile.id, day]);
     // Накопленные spent считались по старым границам — они больше не верны.
-    await dropAggregateCache(user.id);
-    return this.describe({ ...user, monthStartDay: day });
+    await dropAggregateCache(profile.id);
+    return this.describe({ ...profile, monthStartDay: day });
   },
 
   /**
@@ -64,8 +67,8 @@ export const settingsService = {
    * currency_conversions: по этой таблице видно, каким курсом и когда были
    * умножены суммы.
    */
-  async changeCurrency(user: User, input: ChangeCurrencyInput): Promise<CurrencyChangeResult> {
-    if (input.currency === user.currency && input.rate === 1) {
+  async changeCurrency(profile: ProfileScope, input: ChangeCurrencyInput): Promise<CurrencyChangeResult> {
+    if (input.currency === profile.currency && input.rate === 1) {
       throw new ValidationError('Валюта уже установлена, пересчёт не требуется');
     }
 
@@ -76,37 +79,37 @@ export const settingsService = {
         `UPDATE wallets
             SET balance = ROUND(balance * $2::numeric),
                 currency = $3
-          WHERE user_id = $1`,
-        [user.id, input.rate, input.currency],
+          WHERE profile_id = $1`,
+        [profile.id, input.rate, input.currency],
       );
 
       const transactions = await client.query(
         `UPDATE transactions
             SET amount = GREATEST(ROUND(amount * $2::numeric), 1)
-          WHERE user_id = $1`,
-        [user.id, input.rate],
+          WHERE profile_id = $1`,
+        [profile.id, input.rate],
       );
 
       const limits = await client.query(
         `UPDATE category_limits cl
             SET limit_amount = ROUND(cl.limit_amount * $2::numeric)
           FROM categories c
-          WHERE c.id = cl.category_id AND c.user_id = $1`,
-        [user.id, input.rate],
+          WHERE c.id = cl.category_id AND c.profile_id = $1`,
+        [profile.id, input.rate],
       );
 
-      await client.query('UPDATE users SET currency = $2 WHERE id = $1', [
-        user.id,
+      await client.query('UPDATE profiles SET currency = $2 WHERE id = $1', [
+        profile.id,
         input.currency,
       ]);
 
       await client.query(
         `INSERT INTO currency_conversions
-           (user_id, from_currency, to_currency, rate, wallets_count, transactions_count, limits_count)
+           (profile_id, from_currency, to_currency, rate, wallets_count, transactions_count, limits_count)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
-          user.id,
-          user.currency,
+          profile.id,
+          profile.currency,
           input.currency,
           input.rate,
           wallets.rowCount ?? 0,
@@ -124,7 +127,7 @@ export const settingsService = {
       };
     });
 
-    await dropAggregateCache(user.id);
+    await dropAggregateCache(profile.id);
     return result;
   },
 };

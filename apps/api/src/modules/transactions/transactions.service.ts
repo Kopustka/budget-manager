@@ -5,8 +5,8 @@ import {
   type DndResult,
   type EditTransactionInput,
   type Transaction,
-  type User,
 } from '@budget/shared';
+import type { ProfileScope } from '../../modules/profiles/profiles.repository.js';
 import { pool, withTransaction, type PoolClient } from '../../config/db.js';
 import { redis } from '../../config/redis.js';
 import { cache } from '../../redis/cache.js';
@@ -49,37 +49,37 @@ async function flushCache(ops: CacheOps, resync: () => Promise<void>): Promise<v
 
 /** Пересобрать кэш кошелька и spent категории из PostgreSQL. */
 async function resyncFromDb(
-  userId: string,
+  profileId: string,
   walletId: string,
   categoryId: string,
   period: string,
   monthStartDay: number,
 ): Promise<void> {
-  const wallet = await walletsRepository.findOwned(pool, userId, walletId);
+  const wallet = await walletsRepository.findOwned(pool, profileId, walletId);
   const spent = await transactionsRepository.sumSpent(
     pool,
-    userId,
+    profileId,
     categoryId,
     period,
     monthStartDay,
   );
   const pipe = redis.pipeline();
-  cache.setWalletBalance(userId, walletId, wallet.balance, pipe);
-  cache.setSpent(userId, period, categoryId, spent, pipe);
+  cache.setWalletBalance(profileId, walletId, wallet.balance, pipe);
+  cache.setSpent(profileId, period, categoryId, spent, pipe);
   await pipe.exec();
 }
 
 async function limitFor(
   db: PoolClient,
-  userId: string,
+  profileId: string,
   categoryId: string,
   period: string,
 ): Promise<number | null> {
   // Быстрый путь — Redis; при промахе идём в PG и прогреваем кэш.
-  const cached = await cache.getLimit(userId, period, categoryId).catch(() => null);
+  const cached = await cache.getLimit(profileId, period, categoryId).catch(() => null);
   if (cached !== null) return cached;
   const limit = await categoriesRepository.findLimit(db, categoryId, period);
-  if (limit !== null) cache.setLimit(userId, period, categoryId, limit);
+  if (limit !== null) cache.setLimit(profileId, period, categoryId, limit);
   return limit;
 }
 
@@ -88,7 +88,7 @@ export const transactionsService = {
    * Обработка события матрицы: `Доход→Кошелёк` (зачисление) или
    * `Кошелёк→Расход` (списание с проверкой средств и лимита).
    */
-  async processDnd(user: User, input: DndEventInput): Promise<DndOutcome> {
+  async processDnd(profile: ProfileScope, input: DndEventInput): Promise<DndOutcome> {
     const matrix = resolveMatrix(input.source, input.target);
     if (!matrix.allowed || !matrix.action) {
       throw new ForbiddenError(matrix.reason ?? 'Операция запрещена матрицей');
@@ -98,12 +98,12 @@ export const transactionsService = {
     if (Number.isNaN(occurredAt.getTime())) {
       throw new ValidationError('Некорректная дата операции');
     }
-    const period = periodOf(occurredAt, user.monthStartDay);
+    const period = periodOf(occurredAt, profile.monthStartDay);
     const action = matrix.action;
 
     const { outcome, ops, categoryName } = await withTransaction(async (client) => {
-      const wallet = await walletsRepository.findOwned(client, user.id, input.walletId, true);
-      const category = await categoriesRepository.findOwned(client, user.id, input.categoryId);
+      const wallet = await walletsRepository.findOwned(client, profile.id, input.walletId, true);
+      const category = await categoriesRepository.findOwned(client, profile.id, input.categoryId);
 
       const expectedKind = action === 'deposit' ? 'income' : 'expense';
       if (category.kind !== expectedKind) {
@@ -119,7 +119,7 @@ export const transactionsService = {
 
       const balance = await walletsRepository.applyDelta(client, wallet.id, delta);
       const tx = await transactionsRepository.insert(client, {
-        userId: user.id,
+        profileId: profile.id,
         type: action,
         walletId: wallet.id,
         categoryId: category.id,
@@ -134,13 +134,13 @@ export const transactionsService = {
         action === 'spend'
           ? await transactionsRepository.sumSpent(
               client,
-              user.id,
+              profile.id,
               category.id,
               period,
-              user.monthStartDay,
+              profile.monthStartDay,
             )
           : 0;
-      const limit = action === 'spend' ? await limitFor(client, user.id, category.id, period) : null;
+      const limit = action === 'spend' ? await limitFor(client, profile.id, category.id, period) : null;
 
       const occurredUnix = Math.floor(occurredAt.getTime() / 1000);
       const nowUnix = Math.floor(Date.now() / 1000);
@@ -160,15 +160,15 @@ export const transactionsService = {
         // spent здесь не пишем: для списания его записывает атомарный скрипт
         // проверки лимита ниже — иначе два писателя одного поля разъезжаются.
         ops: ((pipe) => {
-          cache.setWalletBalance(user.id, wallet.id, balance, pipe);
-          cache.addTxToCache(user.id, tx.id, occurredUnix, pipe);
-          cache.trimTxCache(user.id, nowUnix, pipe);
+          cache.setWalletBalance(profile.id, wallet.id, balance, pipe);
+          cache.addTxToCache(profile.id, tx.id, occurredUnix, pipe);
+          cache.trimTxCache(profile.id, nowUnix, pipe);
         }) satisfies CacheOps,
       };
     });
 
     await flushCache(ops, () =>
-      resyncFromDb(user.id, input.walletId, input.categoryId, period, user.monthStartDay),
+      resyncFromDb(profile.id, input.walletId, input.categoryId, period, profile.monthStartDay),
     );
 
     if (action === 'spend') {
@@ -177,7 +177,7 @@ export const transactionsService = {
       // тоже: при сбое пересобираем spent из PostgreSQL.
       await alertsService
         .settleSpend({
-          user,
+          profile,
           categoryId: input.categoryId,
           categoryName,
           spent: outcome.categorySpent,
@@ -186,17 +186,17 @@ export const transactionsService = {
         })
         .catch(() =>
           resyncFromDb(
-            user.id,
+            profile.id,
             input.walletId,
             input.categoryId,
             period,
-            user.monthStartDay,
+            profile.monthStartDay,
           ).catch(() => undefined),
         );
 
       // Темп трат считается по PostgreSQL и к кэшу отношения не имеет —
       // это чистый побочный эффект, его сбой гасим молча.
-      await alertsService.checkDailyPace(user, occurredAt, period).catch(() => undefined);
+      await alertsService.checkDailyPace(profile, occurredAt, period).catch(() => undefined);
     }
 
     return outcome;
@@ -206,18 +206,18 @@ export const transactionsService = {
    * Правка транзакции: сумма, подкатегория, комментарий, перепривязка категории.
    * Балансы и spent корректируются дельтами внутри той же PG-транзакции.
    */
-  async edit(user: User, txId: string, input: EditTransactionInput): Promise<DndOutcome> {
+  async edit(profile: ProfileScope, txId: string, input: EditTransactionInput): Promise<DndOutcome> {
     const { outcome, ops, period, walletId, categoryIds } = await withTransaction(
       async (client) => {
-        const old = await transactionsRepository.findOwned(client, user.id, txId, true);
+        const old = await transactionsRepository.findOwned(client, profile.id, txId, true);
         if (!old.walletId) throw new ValidationError('Транзакция без кошелька не редактируется');
 
-        const wallet = await walletsRepository.findOwned(client, user.id, old.walletId, true);
+        const wallet = await walletsRepository.findOwned(client, profile.id, old.walletId, true);
         const newAmount = input.amount ?? old.amount;
         const newCategoryId = input.categoryId ?? old.categoryId;
         if (!newCategoryId) throw new ValidationError('Не указана категория');
 
-        const category = await categoriesRepository.findOwned(client, user.id, newCategoryId);
+        const category = await categoriesRepository.findOwned(client, profile.id, newCategoryId);
         const expectedKind = old.type === 'deposit' ? 'income' : 'expense';
         if (category.kind !== expectedKind) {
           throw new ValidationError(
@@ -240,7 +240,7 @@ export const transactionsService = {
           comment: input.comment === undefined ? old.comment : input.comment ?? null,
         });
 
-        const p = periodOf(new Date(old.occurredAt), user.monthStartDay);
+        const p = periodOf(new Date(old.occurredAt), profile.monthStartDay);
         // Категория могла смениться — пересчитываем обе.
         const touched = new Set<string>([newCategoryId]);
         if (old.categoryId) touched.add(old.categoryId);
@@ -250,13 +250,13 @@ export const transactionsService = {
           for (const id of touched) {
             spentByCategory.set(
               id,
-              await transactionsRepository.sumSpent(client, user.id, id, p, user.monthStartDay),
+              await transactionsRepository.sumSpent(client, profile.id, id, p, profile.monthStartDay),
             );
           }
         }
         const spent = spentByCategory.get(newCategoryId) ?? 0;
         const limit =
-          old.type === 'spend' ? await limitFor(client, user.id, newCategoryId, p) : null;
+          old.type === 'spend' ? await limitFor(client, profile.id, newCategoryId, p) : null;
 
         return {
           period: p,
@@ -271,8 +271,8 @@ export const transactionsService = {
             isOverdraft: limit !== null && spent > limit,
           } satisfies DndOutcome,
           ops: ((pipe) => {
-            cache.setWalletBalance(user.id, wallet.id, balance, pipe);
-            for (const [id, value] of spentByCategory) cache.setSpent(user.id, p, id, value, pipe);
+            cache.setWalletBalance(profile.id, wallet.id, balance, pipe);
+            for (const [id, value] of spentByCategory) cache.setSpent(profile.id, p, id, value, pipe);
           }) satisfies CacheOps,
         };
       },
@@ -280,19 +280,19 @@ export const transactionsService = {
 
     await flushCache(ops, async () => {
       for (const id of categoryIds) {
-        await resyncFromDb(user.id, walletId, id, period, user.monthStartDay);
+        await resyncFromDb(profile.id, walletId, id, period, profile.monthStartDay);
       }
     });
     return outcome;
   },
 
   /** Удаление транзакции с возвратом денег в кошелёк и пересчётом spent. */
-  async remove(user: User, txId: string): Promise<{ walletBalance: number }> {
+  async remove(profile: ProfileScope, txId: string): Promise<{ walletBalance: number }> {
     const { balance, ops, period, walletId, categoryId } = await withTransaction(
       async (client) => {
-        const old = await transactionsRepository.findOwned(client, user.id, txId, true);
+        const old = await transactionsRepository.findOwned(client, profile.id, txId, true);
         if (!old.walletId) throw new ValidationError('Транзакция без кошелька не удаляется');
-        const wallet = await walletsRepository.findOwned(client, user.id, old.walletId, true);
+        const wallet = await walletsRepository.findOwned(client, profile.id, old.walletId, true);
 
         // Откатываем эффект: deposit возвращаем со счёта, spend — на счёт.
         const delta = old.type === 'deposit' ? -old.amount : old.amount;
@@ -303,15 +303,15 @@ export const transactionsService = {
         const newBalance = await walletsRepository.applyDelta(client, wallet.id, delta);
         await transactionsRepository.remove(client, old.id);
 
-        const p = periodOf(new Date(old.occurredAt), user.monthStartDay);
+        const p = periodOf(new Date(old.occurredAt), profile.monthStartDay);
         const spent =
           old.type === 'spend' && old.categoryId
             ? await transactionsRepository.sumSpent(
                 client,
-                user.id,
+                profile.id,
                 old.categoryId,
                 p,
-                user.monthStartDay,
+                profile.monthStartDay,
               )
             : null;
 
@@ -321,18 +321,18 @@ export const transactionsService = {
           walletId: wallet.id,
           categoryId: old.categoryId,
           ops: ((pipe) => {
-            cache.setWalletBalance(user.id, wallet.id, newBalance, pipe);
+            cache.setWalletBalance(profile.id, wallet.id, newBalance, pipe);
             if (spent !== null && old.categoryId) {
-              cache.setSpent(user.id, p, old.categoryId, spent, pipe);
+              cache.setSpent(profile.id, p, old.categoryId, spent, pipe);
             }
-            cache.removeTxFromCache(user.id, old.id, pipe);
+            cache.removeTxFromCache(profile.id, old.id, pipe);
           }) satisfies CacheOps,
         };
       },
     );
 
     await flushCache(ops, async () => {
-      if (categoryId) await resyncFromDb(user.id, walletId, categoryId, period, user.monthStartDay);
+      if (categoryId) await resyncFromDb(profile.id, walletId, categoryId, period, profile.monthStartDay);
     });
     return { walletBalance: balance };
   },

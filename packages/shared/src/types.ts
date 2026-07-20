@@ -4,11 +4,30 @@ export type UUID = string;
 /** Денежные суммы храним в минорных единицах (копейках) — integer, без float. */
 export type MinorAmount = number;
 
+/**
+ * Telegram-личность. Данных бюджета не держит: областью видимости для кошельков,
+ * категорий и операций служит профиль — их у одного аккаунта может быть несколько.
+ */
 export interface User {
   id: UUID;
   telegramId: number;
   username: string | null;
   firstName: string | null;
+  /** Профиль, который сейчас открыт. null только до создания первого. */
+  activeProfileId: UUID | null;
+  createdAt: string;
+}
+
+/**
+ * Профиль — независимый бюджет: свои кошельки, категории, операции и лимиты.
+ *
+ * Валюта и день начала месяца живут здесь, а не на пользователе: «Бизнес в
+ * долларах» рядом с «Личным в рублях» — основной смысл нескольких профилей.
+ */
+export interface Profile {
+  id: UUID;
+  userId: UUID;
+  name: string;
   /** Валюта отображения. Суммы хранятся в минорных единицах этой валюты. */
   currency: string;
   /**
@@ -21,7 +40,7 @@ export interface User {
 
 export interface Wallet {
   id: UUID;
-  userId: UUID;
+  profileId: UUID;
   name: string;
   /** Текущий баланс в минорных единицах */
   balance: MinorAmount;
@@ -31,7 +50,7 @@ export interface Wallet {
 
 export interface Category {
   id: UUID;
-  userId: UUID;
+  profileId: UUID;
   name: string;
   /** income = источник дохода, expense = категория расхода */
   kind: 'income' | 'expense';
@@ -52,7 +71,7 @@ export type TransactionType = 'deposit' | 'spend';
 
 export interface Transaction {
   id: UUID;
-  userId: UUID;
+  profileId: UUID;
   type: TransactionType;
   walletId: UUID | null;
   categoryId: UUID | null;

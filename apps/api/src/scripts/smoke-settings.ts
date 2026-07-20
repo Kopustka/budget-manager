@@ -3,6 +3,7 @@ import { env } from '../config/env.js';
 import { pool } from '../config/db.js';
 import { redis } from '../config/redis.js';
 import { usersRepository } from '../modules/users/users.repository.js';
+import { profilesRepository } from '../modules/profiles/profiles.repository.js';
 import { transactionsService } from '../modules/transactions/transactions.service.js';
 import { settingsService } from '../modules/settings/settings.service.js';
 import { exportService } from '../modules/export/export.service.js';
@@ -30,15 +31,15 @@ function check(name: string, ok: boolean, detail?: unknown): void {
   }
 }
 
-async function reset(userId: string): Promise<void> {
-  await pool.query('DELETE FROM transactions WHERE user_id = $1', [userId]);
+async function reset(profileId: string): Promise<void> {
+  await pool.query('DELETE FROM transactions WHERE profile_id = $1', [profileId]);
   // Валюту кошельков возвращаем вместе с балансом: пересчёт меняет и её, иначе
   // после прогона у пользователя-RUB остаются кошельки в USD.
   await pool.query(
-    "UPDATE wallets SET balance = 100000000, currency = 'RUB' WHERE user_id = $1",
-    [userId],
+    "UPDATE wallets SET balance = 100000000, currency = 'RUB' WHERE profile_id = $1",
+    [profileId],
   );
-  await pool.query("UPDATE users SET month_start_day = 1, currency = 'RUB' WHERE id = $1", [userId]);
+  await pool.query("UPDATE profiles SET month_start_day = 1, currency = 'RUB' WHERE id = $1", [profileId]);
   // Лимиты пересчёт тоже делит на курс, а обратного хода у него нет: без этого
   // прогон за прогоном они усыхают, и следующий smoke-dnd ловит овердрафт
   // с первого же списания. Возвращаем ровно сидовое состояние — лимит только
@@ -46,18 +47,18 @@ async function reset(userId: string): Promise<void> {
   await pool.query(
     `DELETE FROM category_limits
       WHERE category_id IN (
-        SELECT id FROM categories WHERE user_id = $1 AND name <> 'Продукты'
+        SELECT id FROM categories WHERE profile_id = $1 AND name <> 'Продукты'
       )`,
-    [userId],
+    [profileId],
   );
   await pool.query(
     `UPDATE category_limits SET limit_amount = 2000000
       WHERE category_id IN (
-        SELECT id FROM categories WHERE user_id = $1 AND name = 'Продукты'
+        SELECT id FROM categories WHERE profile_id = $1 AND name = 'Продукты'
       )`,
-    [userId],
+    [profileId],
   );
-  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${userId}:*`);
+  const keys = await redis.keys(`${env.REDIS_NAMESPACE}:profile:${profileId}:*`);
   if (keys.length > 0) await redis.del(...keys);
 }
 
@@ -94,23 +95,25 @@ async function main(): Promise<void> {
   );
 
   const user = await usersRepository.upsertByTelegram({ telegramId: TEST_TELEGRAM_ID });
-  await reset(user.id);
+  const profile = await profilesRepository.findActiveScope(user.id);
+  if (!profile) throw new Error('У тестового пользователя нет активного профиля');
+  await reset(profile.id);
 
   const { rows: wallets } = await pool.query<{ id: string }>(
-    'SELECT id FROM wallets WHERE user_id = $1 LIMIT 1',
-    [user.id],
+    'SELECT id FROM wallets WHERE profile_id = $1 LIMIT 1',
+    [profile.id],
   );
   const { rows: cats } = await pool.query<{ id: string; name: string }>(
-    `SELECT id, name FROM categories WHERE user_id = $1 AND kind = 'expense' LIMIT 1`,
-    [user.id],
+    `SELECT id, name FROM categories WHERE profile_id = $1 AND kind = 'expense' LIMIT 1`,
+    [profile.id],
   );
   const walletId = wallets[0]!.id;
   const categoryId = cats[0]!.id;
 
   console.log('\n[2] Смена дня начала месяца');
-  const before = settingsService.describe(user);
+  const before = settingsService.describe(profile);
   check('по умолчанию месяц начинается 1-го', before.monthStartDay === 1, before);
-  const after = await settingsService.setMonthStartDay(user, 2);
+  const after = await settingsService.setMonthStartDay(profile, 2);
   check('день начала сохранён', after.monthStartDay === 2, after);
   check(
     'границы периода сдвинулись на 2-е число',
@@ -118,13 +121,13 @@ async function main(): Promise<void> {
     after,
   );
   const { rows: dbRows } = await pool.query<{ month_start_day: number }>(
-    'SELECT month_start_day FROM users WHERE id = $1',
-    [user.id],
+    'SELECT month_start_day FROM profiles WHERE id = $1',
+    [profile.id],
   );
   check('значение записано в БД', dbRows[0]?.month_start_day === 2, dbRows[0]);
 
   console.log('\n[3] Трата попадает в период по новым границам');
-  const shifted = { ...user, monthStartDay: 2 };
+  const shifted = { ...profile, monthStartDay: 2 };
   // Операция 1-го числа текущего месяца должна лечь в ПРЕДЫДУЩИЙ период.
   const now = new Date();
   const firstOfMonth = new Date(
@@ -141,7 +144,7 @@ async function main(): Promise<void> {
   });
   const currentPeriod = periodOf(now, 2);
   const spentCurrent = await redis.hget(
-    `${env.REDIS_NAMESPACE}:user:${user.id}:spent:${currentPeriod}`,
+    `${env.REDIS_NAMESPACE}:profile:${profile.id}:spent:${currentPeriod}`,
     categoryId,
   );
   check(
@@ -168,16 +171,16 @@ async function main(): Promise<void> {
   console.log('\n[4] Пересчёт валюты');
   const { rows: beforeSums } = await pool.query<{ balance: string; total: string }>(
     `SELECT (SELECT balance FROM wallets WHERE id = $1) AS balance,
-            (SELECT COALESCE(SUM(amount),0) FROM transactions WHERE user_id = $2) AS total`,
-    [walletId, user.id],
+            (SELECT COALESCE(SUM(amount),0) FROM transactions WHERE profile_id = $2) AS total`,
+    [walletId, profile.id],
   );
   const rate = 0.5;
   const conversion = await settingsService.changeCurrency(shifted, { currency: 'USD', rate });
   const { rows: afterSums } = await pool.query<{ balance: string; total: string; currency: string }>(
     `SELECT (SELECT balance FROM wallets WHERE id = $1) AS balance,
-            (SELECT COALESCE(SUM(amount),0) FROM transactions WHERE user_id = $2) AS total,
-            (SELECT currency FROM users WHERE id = $2) AS currency`,
-    [walletId, user.id],
+            (SELECT COALESCE(SUM(amount),0) FROM transactions WHERE profile_id = $2) AS total,
+            (SELECT currency FROM profiles WHERE id = $2) AS currency`,
+    [walletId, profile.id],
   );
   check(
     'баланс умножен на курс',
@@ -189,14 +192,14 @@ async function main(): Promise<void> {
     Number(afterSums[0]!.total) === Math.round(Number(beforeSums[0]!.total) * rate),
     { before: beforeSums[0]!.total, after: afterSums[0]!.total },
   );
-  check('валюта пользователя обновлена', afterSums[0]!.currency === 'USD', afterSums[0]);
+  check('валюта профиля обновлена', afterSums[0]!.currency === 'USD', afterSums[0]);
   const { rows: log } = await pool.query<{ rate: string; to_currency: string }>(
-    'SELECT rate, to_currency FROM currency_conversions WHERE user_id = $1 ORDER BY applied_at DESC LIMIT 1',
-    [user.id],
+    'SELECT rate, to_currency FROM currency_conversions WHERE profile_id = $1 ORDER BY applied_at DESC LIMIT 1',
+    [profile.id],
   );
   check('пересчёт зафиксирован в журнале', Number(log[0]?.rate) === rate, log[0]);
   check('затронутые строки посчитаны', conversion.transactions >= 2, conversion);
-  const cacheKeys = await redis.keys(`${env.REDIS_NAMESPACE}:user:${user.id}:spent:*`);
+  const cacheKeys = await redis.keys(`${env.REDIS_NAMESPACE}:profile:${profile.id}:spent:*`);
   check('кэш агрегатов сброшен', cacheKeys.length === 0, cacheKeys);
 
   console.log('\n[5] Выгрузка CSV');
@@ -234,7 +237,7 @@ async function main(): Promise<void> {
   setBotApi(null);
 
   // Возвращаем тестового пользователя в исходное состояние.
-  await reset(user.id);
+  await reset(profile.id);
   console.log(failures === 0 ? '\n🎉 Все проверки пройдены' : `\n💥 Провалено: ${failures}`);
 }
 

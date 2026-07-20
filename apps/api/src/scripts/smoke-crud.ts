@@ -71,20 +71,20 @@ function check(name: string, ok: boolean, detail?: unknown): void {
 async function cleanup(userId: string): Promise<void> {
   const patterns = [`${PREFIX}%`, 'e2e %'];
   await pool.query(
-    `DELETE FROM transactions WHERE user_id = $1
-       AND category_id IN (SELECT id FROM categories WHERE user_id = $1 AND name LIKE ANY($2))`,
+    `DELETE FROM transactions WHERE profile_id = $1
+       AND category_id IN (SELECT id FROM categories WHERE profile_id = $1 AND name LIKE ANY($2))`,
     [userId, patterns],
   );
   await pool.query(
-    `DELETE FROM transactions WHERE user_id = $1
-       AND wallet_id IN (SELECT id FROM wallets WHERE user_id = $1 AND name LIKE ANY($2))`,
+    `DELETE FROM transactions WHERE profile_id = $1
+       AND wallet_id IN (SELECT id FROM wallets WHERE profile_id = $1 AND name LIKE ANY($2))`,
     [userId, patterns],
   );
-  await pool.query('DELETE FROM categories WHERE user_id = $1 AND name LIKE ANY($2)', [
+  await pool.query('DELETE FROM categories WHERE profile_id = $1 AND name LIKE ANY($2)', [
     userId,
     patterns,
   ]);
-  await pool.query('DELETE FROM wallets WHERE user_id = $1 AND name LIKE ANY($2)', [
+  await pool.query('DELETE FROM wallets WHERE profile_id = $1 AND name LIKE ANY($2)', [
     userId,
     patterns,
   ]);
@@ -202,7 +202,7 @@ async function main(): Promise<void> {
 
   console.log('\n[6] Потолок количества');
   const { rows } = await pool.query<{ count: string }>(
-    'SELECT count(*) FROM wallets WHERE user_id = $1',
+    'SELECT count(*) FROM wallets WHERE profile_id = $1',
     [userId],
   );
   const existing = Number(rows[0]!.count);

@@ -170,7 +170,36 @@ export interface SettingsResponse {
   period: string;
   periodStart: string;
   periodEnd: string;
+  /** Профиль, к которому относятся настройки. */
+  profileId: string;
+  profileName: string;
 }
+
+/**
+ * Сколько профилей на аккаунт. Ограничение не техническое, а смысловое:
+ * список переключения должен читаться с одного взгляда.
+ */
+export const MAX_PROFILES = 8;
+
+/** POST /api/profiles — новый профиль бюджета */
+export const createProfileSchema = z.object({
+  name: z.string().trim().min(1, 'Введите название').max(40, 'Слишком длинное название'),
+  /** Не указана — берём валюту текущего профиля. */
+  currency: z.enum(CURRENCY_CODES as [string, ...string[]]).optional(),
+  monthStartDay: z
+    .number()
+    .int()
+    .min(MIN_MONTH_START_DAY)
+    .max(MAX_MONTH_START_DAY, `День начала месяца — от 1 до ${MAX_MONTH_START_DAY}`)
+    .optional(),
+});
+export type CreateProfileInput = z.infer<typeof createProfileSchema>;
+
+/** PATCH /api/profiles/:id — переименование */
+export const updateProfileSchema = z.object({
+  name: z.string().trim().min(1, 'Введите название').max(40, 'Слишком длинное название'),
+});
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 
 /** Фильтры ленты истории. */
 export interface HistoryFilters {

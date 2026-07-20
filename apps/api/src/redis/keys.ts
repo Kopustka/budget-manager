@@ -9,18 +9,18 @@ const NS = env.REDIS_NAMESPACE;
 
 export const rkey = {
   /** ZSET: скользящее окно истории (30 дней) для карусели. score = occurredAt (unix) */
-  txCache30d: (userId: string) => `${NS}:user:${userId}:tx_cache:30d`,
+  txCache30d: (profileId: string) => `${NS}:profile:${profileId}:tx_cache:30d`,
 
   /** HASH: текущие балансы кошельков. field = walletId, value = баланс (минорные) */
-  wallets: (userId: string) => `${NS}:user:${userId}:wallets`,
+  wallets: (profileId: string) => `${NS}:profile:${profileId}:wallets`,
 
   /** HASH: накопленные траты по категориям за месяц. field = categoryId, value = spent */
-  spent: (userId: string, period: string) =>
-    `${NS}:user:${userId}:spent:${period}`,
+  spent: (profileId: string, period: string) =>
+    `${NS}:profile:${profileId}:spent:${period}`,
 
   /** HASH: лимиты по категориям за месяц. field = categoryId, value = limit */
-  limits: (userId: string, period: string) =>
-    `${NS}:user:${userId}:limits:${period}`,
+  limits: (profileId: string, period: string) =>
+    `${NS}:profile:${profileId}:limits:${period}`,
 
   /** LIST: очередь моментальных пушей боту (FIFO) */
   botAlertsQueue: `${NS}:queue:bot_alerts`,
@@ -33,6 +33,6 @@ export const rkey = {
    * не ставится в очередь. Без него достижение лимита слало бы уведомление
    * на каждую следующую трату по категории.
    */
-  alertOnce: (userId: string, kind: string, scope: string) =>
-    `${NS}:user:${userId}:alert:${kind}:${scope}`,
+  alertOnce: (profileId: string, kind: string, scope: string) =>
+    `${NS}:profile:${profileId}:alert:${kind}:${scope}`,
 } as const;

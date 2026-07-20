@@ -5,6 +5,7 @@ import { redis } from './config/redis.js';
 import { AppError, ValidationError } from './shared/errors.js';
 import { env } from './config/env.js';
 import { usersRoutes } from './modules/users/users.controller.js';
+import { profilesRoutes } from './modules/profiles/profiles.controller.js';
 import { walletsRoutes } from './modules/wallets/wallets.controller.js';
 import { categoriesRoutes } from './modules/categories/categories.controller.js';
 import { transactionsRoutes } from './modules/transactions/transactions.controller.js';
@@ -90,6 +91,7 @@ export function buildApp(): FastifyInstance {
 
   // Модули (FDD): каждый регистрируется как плагин со своим auth-хуком.
   app.register(usersRoutes, { prefix: '/api' });
+  app.register(profilesRoutes, { prefix: '/api' });
   app.register(walletsRoutes, { prefix: '/api' });
   app.register(categoriesRoutes, { prefix: '/api' });
   app.register(transactionsRoutes, { prefix: '/api' });

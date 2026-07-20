@@ -6,7 +6,7 @@ import { periodRange } from '../../shared/period.js';
 
 interface TxRow {
   id: string;
-  user_id: string;
+  profile_id: string;
   type: TransactionType;
   wallet_id: string | null;
   category_id: string | null;
@@ -20,7 +20,7 @@ interface TxRow {
 function toTx(r: TxRow): Transaction {
   return {
     id: r.id,
-    userId: r.user_id,
+    profileId: r.profile_id,
     type: r.type,
     walletId: r.wallet_id,
     categoryId: r.category_id,
@@ -34,7 +34,7 @@ function toTx(r: TxRow): Transaction {
 
 /** Параметры выборки истории: диапазон и необязательные фильтры. */
 export interface HistoryQuery {
-  userId: string;
+  profileId: string;
   from?: Date | string | null;
   to?: Date | string | null;
   type?: TransactionType | null;
@@ -43,7 +43,7 @@ export interface HistoryQuery {
 }
 
 export interface InsertTxInput {
-  userId: string;
+  profileId: string;
   type: TransactionType;
   walletId: string;
   categoryId: string;
@@ -57,11 +57,11 @@ export const transactionsRepository = {
   async insert(db: Queryable, input: InsertTxInput): Promise<Transaction> {
     const { rows } = await db.query<TxRow>(
       `INSERT INTO transactions
-         (user_id, type, wallet_id, category_id, subcategory, amount, comment, occurred_at)
+         (profile_id, type, wallet_id, category_id, subcategory, amount, comment, occurred_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
-        input.userId,
+        input.profileId,
         input.type,
         input.walletId,
         input.categoryId,
@@ -77,13 +77,13 @@ export const transactionsRepository = {
   /** Транзакция пользователя. `forUpdate` — блокировка на время правки/удаления. */
   async findOwned(
     db: Queryable,
-    userId: string,
+    profileId: string,
     id: string,
     forUpdate = false,
   ): Promise<Transaction> {
     const { rows } = await db.query<TxRow>(
-      `SELECT * FROM transactions WHERE id = $1 AND user_id = $2${forUpdate ? ' FOR UPDATE' : ''}`,
-      [id, userId],
+      `SELECT * FROM transactions WHERE id = $1 AND profile_id = $2${forUpdate ? ' FOR UPDATE' : ''}`,
+      [id, profileId],
     );
     if (!rows[0]) throw new NotFoundError('Транзакция не найдена');
     return toTx(rows[0]);
@@ -115,39 +115,39 @@ export const transactionsRepository = {
   },
 
   /** Лента истории за последние N дней (карусель времени). */
-  async listRecent(userId: string, days: number, limit = 200): Promise<Transaction[]> {
+  async listRecent(profileId: string, days: number, limit = 200): Promise<Transaction[]> {
     const { rows } = await pool.query<TxRow>(
       `SELECT * FROM transactions
-        WHERE user_id = $1 AND occurred_at >= now() - ($2 || ' days')::interval
+        WHERE profile_id = $1 AND occurred_at >= now() - ($2 || ' days')::interval
         ORDER BY occurred_at DESC
         LIMIT $3`,
-      [userId, String(days), limit],
+      [profileId, String(days), limit],
     );
     return rows.map(toTx);
   },
 
   /** Транзакции за конкретный день (UTC). */
-  async listByDay(userId: string, day: string): Promise<Transaction[]> {
+  async listByDay(profileId: string, day: string): Promise<Transaction[]> {
     const { rows } = await pool.query<TxRow>(
       `SELECT * FROM transactions
-        WHERE user_id = $1
+        WHERE profile_id = $1
           AND occurred_at >= $2::date
           AND occurred_at < ($2::date + interval '1 day')
         ORDER BY occurred_at DESC`,
-      [userId, day],
+      [profileId, day],
     );
     return rows.map(toTx);
   },
 
   /**
    * Лента истории с фильтрами. Диапазон и сортировка ложатся на индекс
-   * idx_tx_user_time, поэтому фильтры добавлены как необязательные условия,
+   * idx_tx_profile_time, поэтому фильтры добавлены как необязательные условия,
    * а не как отдельные запросы.
    */
   async listRange(input: HistoryQuery): Promise<Transaction[]> {
     const { rows } = await pool.query<TxRow>(
       `SELECT * FROM transactions
-        WHERE user_id = $1
+        WHERE profile_id = $1
           AND ($2::timestamptz IS NULL OR occurred_at >= $2)
           AND ($3::timestamptz IS NULL OR occurred_at < $3)
           AND ($4::text IS NULL OR type = $4)
@@ -155,7 +155,7 @@ export const transactionsRepository = {
         ORDER BY occurred_at DESC
         LIMIT $6`,
       [
-        input.userId,
+        input.profileId,
         input.from ?? null,
         input.to ?? null,
         input.type ?? null,
@@ -174,13 +174,13 @@ export const transactionsRepository = {
          COALESCE(SUM(amount) FILTER (WHERE type = 'spend'), 0)   AS expense,
          COUNT(*)                                                  AS count
         FROM transactions
-       WHERE user_id = $1
+       WHERE profile_id = $1
          AND ($2::timestamptz IS NULL OR occurred_at >= $2)
          AND ($3::timestamptz IS NULL OR occurred_at < $3)
          AND ($4::text IS NULL OR type = $4)
          AND ($5::uuid IS NULL OR category_id = $5)`,
       [
-        input.userId,
+        input.profileId,
         input.from ?? null,
         input.to ?? null,
         input.type ?? null,
@@ -201,7 +201,7 @@ export const transactionsRepository = {
    */
   async sumSpent(
     db: Queryable,
-    userId: string,
+    profileId: string,
     categoryId: string,
     period: string,
     monthStartDay = 1,
@@ -210,16 +210,16 @@ export const transactionsRepository = {
     const { rows } = await db.query<{ total: string | null }>(
       `SELECT COALESCE(SUM(amount), 0) AS total
          FROM transactions
-        WHERE user_id = $1 AND category_id = $2 AND type = 'spend'
+        WHERE profile_id = $1 AND category_id = $2 AND type = 'spend'
           AND occurred_at >= $3 AND occurred_at < $4`,
-      [userId, categoryId, start, end],
+      [profileId, categoryId, start, end],
     );
     return Number(rows[0]?.total ?? 0);
   },
 
   /** Распределение трат по категориям за период (donut). */
   async spentByCategory(
-    userId: string,
+    profileId: string,
     period: string,
     monthStartDay = 1,
   ): Promise<Array<{ categoryId: string; total: number }>> {
@@ -227,18 +227,18 @@ export const transactionsRepository = {
     const { rows } = await pool.query<{ category_id: string; total: string }>(
       `SELECT category_id, SUM(amount) AS total
          FROM transactions
-        WHERE user_id = $1 AND type = 'spend' AND category_id IS NOT NULL
+        WHERE profile_id = $1 AND type = 'spend' AND category_id IS NOT NULL
           AND occurred_at >= $2 AND occurred_at < $3
         GROUP BY category_id
         ORDER BY total DESC`,
-      [userId, start, end],
+      [profileId, start, end],
     );
     return rows.map((r) => ({ categoryId: r.category_id, total: Number(r.total) }));
   },
 
   /** Траты по дням периода (velocity). */
   async spentByDay(
-    userId: string,
+    profileId: string,
     period: string,
     monthStartDay = 1,
   ): Promise<Array<{ day: string; total: number }>> {
@@ -247,11 +247,11 @@ export const transactionsRepository = {
       `SELECT to_char(date_trunc('day', occurred_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
               SUM(amount) AS total
          FROM transactions
-        WHERE user_id = $1 AND type = 'spend'
+        WHERE profile_id = $1 AND type = 'spend'
           AND occurred_at >= $2 AND occurred_at < $3
         GROUP BY 1
         ORDER BY 1`,
-      [userId, start, end],
+      [profileId, start, end],
     );
     return rows.map((r) => ({ day: r.day, total: Number(r.total) }));
   },

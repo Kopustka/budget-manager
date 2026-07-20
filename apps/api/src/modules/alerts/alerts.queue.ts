@@ -68,7 +68,7 @@ export async function pushOnce(
   scope: string,
   ttlSeconds: number,
 ): Promise<boolean> {
-  const key = rkey.alertOnce(alert.userId, alert.kind, scope);
+  const key = rkey.alertOnce(alert.profileId, alert.kind, scope);
   const acquired = await redis.set(key, '1', 'EX', ttlSeconds, 'NX');
   if (acquired !== 'OK') return false;
   await alertsQueue.push(alert);

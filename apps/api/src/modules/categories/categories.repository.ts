@@ -6,7 +6,7 @@ import { asDuplicateError } from '../../shared/pg-errors.js';
 
 interface CategoryRow {
   id: string;
-  user_id: string;
+  profile_id: string;
   name: string;
   kind: 'income' | 'expense';
   icon: string | null;
@@ -17,7 +17,7 @@ interface CategoryRow {
 function toCategory(r: CategoryRow): Category {
   return {
     id: r.id,
-    userId: r.user_id,
+    profileId: r.profile_id,
     name: r.name,
     kind: r.kind,
     icon: r.icon,
@@ -27,33 +27,33 @@ function toCategory(r: CategoryRow): Category {
 }
 
 export const categoriesRepository = {
-  async listByUser(userId: string, kind?: 'income' | 'expense'): Promise<Category[]> {
+  async listByProfile(profileId: string, kind?: 'income' | 'expense'): Promise<Category[]> {
     const { rows } = await pool.query<CategoryRow>(
       `SELECT * FROM categories
-        WHERE user_id = $1 AND ($2::text IS NULL OR kind = $2)
+        WHERE profile_id = $1 AND ($2::text IS NULL OR kind = $2)
         ORDER BY created_at`,
-      [userId, kind ?? null],
+      [profileId, kind ?? null],
     );
     return rows.map(toCategory);
   },
 
-  async countByKind(userId: string, kind: 'income' | 'expense'): Promise<number> {
+  async countByKind(profileId: string, kind: 'income' | 'expense'): Promise<number> {
     const { rows } = await pool.query<{ count: string }>(
-      'SELECT count(*) FROM categories WHERE user_id = $1 AND kind = $2',
-      [userId, kind],
+      'SELECT count(*) FROM categories WHERE profile_id = $1 AND kind = $2',
+      [profileId, kind],
     );
     return Number(rows[0]?.count ?? 0);
   },
 
   async create(
-    userId: string,
+    profileId: string,
     input: { name: string; kind: 'income' | 'expense'; icon: string | null; color: string | null },
   ): Promise<Category> {
     try {
       const { rows } = await pool.query<CategoryRow>(
-        `INSERT INTO categories (user_id, name, kind, icon, color)
+        `INSERT INTO categories (profile_id, name, kind, icon, color)
          VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [userId, input.name, input.kind, input.icon, input.color],
+        [profileId, input.name, input.kind, input.icon, input.color],
       );
       return toCategory(rows[0]!);
     } catch (err) {
@@ -66,10 +66,10 @@ export const categoriesRepository = {
     }
   },
 
-  async findOwned(db: Queryable, userId: string, categoryId: string): Promise<Category> {
+  async findOwned(db: Queryable, profileId: string, categoryId: string): Promise<Category> {
     const { rows } = await db.query<CategoryRow>(
-      'SELECT * FROM categories WHERE id = $1 AND user_id = $2',
-      [categoryId, userId],
+      'SELECT * FROM categories WHERE id = $1 AND profile_id = $2',
+      [categoryId, profileId],
     );
     if (!rows[0]) throw new NotFoundError('Категория не найдена');
     return toCategory(rows[0]);
@@ -89,7 +89,7 @@ export const categoriesRepository = {
    * COALESCE: NULL в параметре означает «не трогай», а не «обнули».
    */
   async update(
-    userId: string,
+    profileId: string,
     categoryId: string,
     patch: { name?: string; icon?: string; color?: string },
   ): Promise<Category> {
@@ -99,9 +99,9 @@ export const categoriesRepository = {
             SET name  = COALESCE($3, name),
                 icon  = COALESCE($4, icon),
                 color = COALESCE($5, color)
-          WHERE id = $1 AND user_id = $2
+          WHERE id = $1 AND profile_id = $2
         RETURNING *`,
-        [categoryId, userId, patch.name ?? null, patch.icon ?? null, patch.color ?? null],
+        [categoryId, profileId, patch.name ?? null, patch.icon ?? null, patch.color ?? null],
       );
       if (!rows[0]) throw new NotFoundError('Категория не найдена');
       return toCategory(rows[0]);
