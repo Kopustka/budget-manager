@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { PlannedTransaction } from '@budget/shared';
 import { Trash2 } from 'lucide-react';
 import { usePlannedStore } from '@/stores/usePlannedStore';
 import { useBudgetStore } from '@/stores/useBudgetStore';
@@ -22,8 +23,17 @@ type Mode = 'monthly' | 'once';
  * платится «пятого», а не «пятого августа», и выбор конкретной даты пришлось бы
  * повторять каждый месяц.
  */
-export function PlannedSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { rules, create, remove } = usePlannedStore();
+export function PlannedSheet({
+  open,
+  onClose,
+  editId = null,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Открыть сразу на правке этого события — из карточки дня в календаре. */
+  editId?: string | null;
+}) {
+  const { rules, create, update, remove } = usePlannedStore();
   const categories = useBudgetStore((s) => s.categories);
   const notify = useUiStore((s) => s.notify);
 
@@ -37,20 +47,39 @@ export function PlannedSheet({ open, onClose }: { open: boolean; onClose: () => 
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /** id правимого правила; null — форма создаёт новое. */
+  const [editing, setEditing] = useState<string | null>(null);
+
+  /** Загрузить правило в форму. null — вернуться к созданию нового. */
+  function fill(rule: PlannedTransaction | null) {
+    setEditing(rule?.id ?? null);
+    setError(null);
+    if (!rule) {
+      setName('');
+      setAmount('');
+      setMode('monthly');
+      setDueDay(new Date().getDate() > 28 ? 1 : new Date().getDate());
+      setDueDate(new Date(Date.now() + 86_400_000).toISOString().slice(0, 10));
+      setCategoryId(expenses[0]?.id ?? null);
+      return;
+    }
+    setName(rule.name);
+    // Сумма возвращается в то же поле, из которого её разбирает parseAmount,
+    // поэтому без разделителей и символа валюты.
+    setAmount(String(rule.amount / 100));
+    setMode(rule.recurrence);
+    setDueDay(rule.dueDay ?? 1);
+    setDueDate(rule.dueDate ?? new Date().toISOString().slice(0, 10));
+    setCategoryId(rule.categoryId);
+  }
 
   useEffect(() => {
     if (!open) return;
-    setName('');
-    setAmount('');
-    setMode('monthly');
-    setDueDay(new Date().getDate() > 28 ? 1 : new Date().getDate());
-    setDueDate(new Date(Date.now() + 86_400_000).toISOString().slice(0, 10));
-    setCategoryId(expenses[0]?.id ?? null);
-    setError(null);
-    // expenses пересобирается каждый рендер — завязываться на него нельзя,
+    fill(editId ? (rules.find((r) => r.id === editId) ?? null) : null);
+    // expenses и rules пересобираются каждый рендер — завязываться на них нельзя,
     // иначе форма сбрасывалась бы при любом обновлении справочников.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, editId]);
 
   if (!open) return null;
 
@@ -64,15 +93,29 @@ export function PlannedSheet({ open, onClose }: { open: boolean; onClose: () => 
     setSaving(true);
     setError(null);
     try {
-      await create({
-        name: trimmed,
-        amount: minor,
-        categoryId,
-        recurrence: mode,
-        ...(mode === 'monthly' ? { dueDay } : { dueDate }),
-      });
-      haptics.success();
-      notify('Событие добавлено в календарь', 'success');
+      if (editing) {
+        // Расписание правится в пределах своего вида: превращать ежемесячное
+        // событие в разовое на лету нельзя — уже принятые решения по датам
+        // относились бы к другому расписанию.
+        await update(editing, {
+          name: trimmed,
+          amount: minor,
+          categoryId,
+          ...(mode === 'monthly' ? { dueDay } : { dueDate }),
+        });
+        haptics.success();
+        notify('Событие обновлено', 'success');
+      } else {
+        await create({
+          name: trimmed,
+          amount: minor,
+          categoryId,
+          recurrence: mode,
+          ...(mode === 'monthly' ? { dueDay } : { dueDate }),
+        });
+        haptics.success();
+        notify('Событие добавлено в календарь', 'success');
+      }
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Не удалось сохранить');
@@ -90,11 +133,11 @@ export function PlannedSheet({ open, onClose }: { open: boolean; onClose: () => 
   return (
     <BottomSheet
       open
-      title="Обязательная трата"
+      title={editing ? 'Правка события' : 'Обязательная трата'}
       onClose={onClose}
       footer={
         <Button full disabled={saving} onClick={() => void submit()}>
-          {saving ? 'Сохраняем…' : 'Добавить в календарь'}
+          {saving ? 'Сохраняем…' : editing ? 'Сохранить' : 'Добавить в календарь'}
         </Button>
       }
     >
@@ -127,6 +170,7 @@ export function PlannedSheet({ open, onClose }: { open: boolean; onClose: () => 
               key={value}
               type="button"
               aria-pressed={mode === value}
+              disabled={Boolean(editing)}
               onClick={() => {
                 haptics.selection();
                 setMode(value);
@@ -134,6 +178,7 @@ export function PlannedSheet({ open, onClose }: { open: boolean; onClose: () => 
               className={cn(
                 'min-h-11 flex-1 rounded-2xl text-sm transition-colors duration-[var(--duration-fast)]',
                 mode === value ? 'bg-brand font-semibold text-brand-ink' : 'bg-hairline',
+                editing && mode !== value && 'opacity-40',
               )}
             >
               {label}
@@ -213,17 +258,49 @@ export function PlannedSheet({ open, onClose }: { open: boolean; onClose: () => 
 
       {rules.length > 0 && (
         <div className="mt-5 border-t border-hairline pt-4">
-          <p className="pb-2 text-sm text-ink-muted">Уже в календаре</p>
+          <div className="flex items-baseline justify-between pb-2">
+            <p className="text-sm text-ink-muted">Уже в календаре</p>
+            {editing ? (
+              <button
+                type="button"
+                onClick={() => {
+                  haptics.selection();
+                  fill(null);
+                }}
+                className="text-xs text-brand"
+              >
+                Отменить правку
+              </button>
+            ) : (
+              <p className="text-xs text-ink-faint">Нажмите, чтобы изменить</p>
+            )}
+          </div>
           <ul className="flex flex-col gap-1">
             {rules.map((r) => (
-              <li key={r.id} className="flex items-center gap-2 py-1 text-sm">
-                <span className="min-w-0 flex-1 truncate">
-                  {r.name}
-                  <span className="text-xs text-ink-faint">
-                    {r.recurrence === 'monthly' ? ` · ${r.dueDay} числа` : ` · ${r.dueDate}`}
+              <li key={r.id} className="flex items-center gap-2 text-sm">
+                {/* Тап по строке загружает событие в форму выше: отдельного
+                    экрана правки не нужно, поля те же самые */}
+                <button
+                  type="button"
+                  aria-label={`Изменить ${r.name}`}
+                  onClick={() => {
+                    haptics.selection();
+                    fill(r);
+                  }}
+                  className={cn(
+                    'flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl px-2 text-left',
+                    'transition-colors duration-[var(--duration-fast)] active:bg-hairline',
+                    editing === r.id && 'bg-brand/15',
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    {r.name}
+                    <span className="text-xs text-ink-faint">
+                      {r.recurrence === 'monthly' ? ` · ${r.dueDay} числа` : ` · ${r.dueDate}`}
+                    </span>
                   </span>
-                </span>
-                <Money value={r.amount} className="text-sm" />
+                  <Money value={r.amount} className="text-sm" />
+                </button>
                 <button
                   type="button"
                   aria-label={`Удалить ${r.name}`}
