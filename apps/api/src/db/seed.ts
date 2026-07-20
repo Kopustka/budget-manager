@@ -1,3 +1,4 @@
+import { CATEGORY_COLORS } from '@budget/shared';
 import { pool } from '../config/db.js';
 import { redis } from '../config/redis.js';
 import { cache } from '../redis/cache.js';
@@ -38,17 +39,23 @@ async function seed(): Promise<void> {
   );
   const walletId = walletRows[0]!.id;
 
+  // Цвета берём из каталога, а не хексами: по этому же списку API валидирует
+  // правку категории, и записанное мимо него значение нельзя было бы сохранить
+  // обратно (см. миграцию 0004_category_colors.sql).
+  const [chart1, chart2, chart3] = CATEGORY_COLORS;
+  const success = 'var(--color-success)' satisfies (typeof CATEGORY_COLORS)[number];
+
   const { rows: incomeRows } = await pool.query<{ id: string }>(
     `INSERT INTO categories (user_id, name, kind, icon, color)
-     VALUES ($1, 'Зарплата', 'income', 'wallet', '#34C759') RETURNING id`,
-    [user.id],
+     VALUES ($1, 'Зарплата', 'income', 'wallet', $2) RETURNING id`,
+    [user.id, success],
   );
   const incomeId = incomeRows[0]!.id;
 
   const expenses = [
-    ['Продукты', 'shopping-cart', '#007AFF'],
-    ['Кафе', 'coffee', '#FF9500'],
-    ['Транспорт', 'car', '#5856D6'],
+    ['Продукты', 'shopping-cart', chart1],
+    ['Кафе', 'coffee', chart2],
+    ['Транспорт', 'car', chart3],
   ] as const;
   const expenseIds: string[] = [];
   for (const [name, icon, color] of expenses) {
