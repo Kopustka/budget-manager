@@ -16,6 +16,7 @@
     "worker": "tsx src/workers/index.ts",
     "smoke:alerts": "REDIS_NAMESPACE=finapp-smoke tsx src/scripts/smoke-alerts.ts",
     "smoke:profiles": "REDIS_NAMESPACE=finapp-smoke tsx src/scripts/smoke-profiles.ts",
+    "smoke:forecast": "REDIS_NAMESPACE=finapp-smoke tsx src/scripts/smoke-forecast.ts",
     "smoke:limits": "REDIS_NAMESPACE=finapp-smoke tsx src/scripts/smoke-limits.ts",
     "smoke:bot": "tsx src/scripts/smoke-bot.ts",
     "smoke:settings": "REDIS_NAMESPACE=finapp-smoke tsx src/scripts/smoke-settings.ts",

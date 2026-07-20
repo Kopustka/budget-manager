@@ -37,9 +37,27 @@ export interface FastPaceAlert extends AlertBase {
   dailyBudget: number;
 }
 
-/** Вечернее напоминание записать траты. */
-export interface ReminderAlert extends AlertBase {
-  kind: 'evening_reminder';
+/**
+ * Вечерний отчёт «День в цифрах».
+ *
+ * В очередь кладётся только адресация: цифры подставляются при доставке
+ * (`hydrateAlert`). Планировщик срабатывает задолго до времени отправки, и
+ * посчитанные им суммы к вечеру успели бы устареть.
+ */
+export interface DailyDigestAlert extends AlertBase {
+  kind: 'daily_digest';
+  /** День отчёта, YYYY-MM-DD. */
+  day: string;
+  /** Потрачено за день. Заполняется при доставке. */
+  spentToday?: number;
+  /** Сумма лимитов периода; null — лимиты не заданы. */
+  budget?: number | null;
+  /** Остаток бюджета на месяц; null без лимитов. Отрицательный — перерасход. */
+  remaining?: number | null;
+  /** Есть ли категории, вышедшие за свой лимит. */
+  overLimit?: boolean;
+  /** Текущая серия дней без трат — нужна, когда за день не потрачено ничего. */
+  noSpendStreak?: number;
 }
 
-export type BotAlert = LimitReachedAlert | OverdraftAlert | FastPaceAlert | ReminderAlert;
+export type BotAlert = LimitReachedAlert | OverdraftAlert | FastPaceAlert | DailyDigestAlert;
