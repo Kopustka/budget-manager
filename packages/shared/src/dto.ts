@@ -41,6 +41,22 @@ export const createWalletSchema = z.object({
 });
 export type CreateWalletInput = z.infer<typeof createWalletSchema>;
 
+/**
+ * PATCH /api/wallets/:id — правка кошелька.
+ * Оба поля опциональны: шторка шлёт только то, что менял пользователь.
+ * balance — абсолютная величина (коррекция «сколько на самом деле лежит»),
+ * а не дельта: пользователь вводит итоговое число, а не поправку к нему.
+ */
+export const updateWalletSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Введите название').max(40, 'Слишком длинное название').optional(),
+    balance: z.number().int().nonnegative().max(1_000_000_000_00).optional(),
+  })
+  .refine((v) => v.name !== undefined || v.balance !== undefined, {
+    message: 'Нечего сохранять',
+  });
+export type UpdateWalletInput = z.infer<typeof updateWalletSchema>;
+
 /** Потолок суммы лимита — та же граница, что у стартового баланса кошелька. */
 export const MAX_LIMIT_AMOUNT = 1_000_000_000_00;
 

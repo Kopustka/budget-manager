@@ -58,6 +58,9 @@ export function EditCategorySheet({ category, onClose }: EditCategorySheetProps)
 
   if (!category) return null;
 
+  // У источника дохода плана расходов не бывает — поле лимита ему не показываем.
+  const isExpense = category.kind === 'expense';
+
   async function submit() {
     if (!category) return;
     const trimmed = name.trim();
@@ -79,9 +82,13 @@ export function EditCategorySheet({ category, onClose }: EditCategorySheetProps)
     if (trimmed !== category.name) patch.name = trimmed;
     if (icon !== (category.icon ?? CATEGORY_ICONS[0])) patch.icon = icon;
     if (color !== null && color !== category.color) patch.color = color;
-    // null — явное «снять лимит»: сервер отличает его от отсутствия поля.
-    const nextLimit = parseAmount(limit);
-    if (nextLimit !== category.limit) patch.limitAmount = nextLimit;
+    // Лимит — только у расходов. Для дохода поля нет, и сервер такой patch
+    // отклонил бы, поэтому даже не собираем его.
+    if (isExpense) {
+      // null — явное «снять лимит»: сервер отличает его от отсутствия поля.
+      const nextLimit = parseAmount(limit);
+      if (nextLimit !== category.limit) patch.limitAmount = nextLimit;
+    }
 
     if (Object.keys(patch).length === 0) {
       onClose();
@@ -106,7 +113,7 @@ export function EditCategorySheet({ category, onClose }: EditCategorySheetProps)
   return (
     <BottomSheet
       open
-      title="Настройки категории"
+      title={isExpense ? 'Настройки категории' : 'Настройки источника'}
       onClose={onClose}
       footer={
         <Button full disabled={saving} onClick={() => void submit()}>
@@ -171,9 +178,11 @@ export function EditCategorySheet({ category, onClose }: EditCategorySheetProps)
         </div>
       </div>
 
-      <div className="pt-4">
-        <LimitField value={limit} onChange={setLimit} />
-      </div>
+      {isExpense && (
+        <div className="pt-4">
+          <LimitField value={limit} onChange={setLimit} />
+        </div>
+      )}
 
       {error ? <p className="pt-3 text-sm text-danger">{error}</p> : null}
     </BottomSheet>

@@ -8,6 +8,7 @@ import {
   type LimitStatus,
   type Transaction,
   type UpdateCategoryInput,
+  type UpdateWalletInput,
   type Wallet,
 } from '@budget/shared';
 import { walletApi } from '@/entities/wallet/api';
@@ -29,6 +30,8 @@ interface BudgetState {
   load: () => Promise<void>;
   addWallet: (input: CreateWalletInput) => Promise<void>;
   addCategory: (input: CreateCategoryInput) => Promise<void>;
+  /** Правка названия и/или коррекция баланса кошелька. */
+  updateWallet: (walletId: string, input: UpdateWalletInput) => Promise<void>;
   /** Правка категории и её месячного плана. */
   updateCategory: (categoryId: string, input: UpdateCategoryInput) => Promise<void>;
   applyDndResult: (result: DndPatch) => void;
@@ -82,6 +85,16 @@ export const useBudgetStore = create<BudgetState>((set) => ({
   async addCategory(input) {
     const category = await categoryApi.create(input);
     set((state) => ({ categories: [...state.categories, category] }));
+  },
+
+  // Ответ сервера — источник истины по балансу: подставляем кошелёк целиком,
+  // а не сшиваем из полей формы. Так коррекция баланса и переименование
+  // приходят одним согласованным объектом.
+  async updateWallet(walletId, input) {
+    const updated = await walletApi.update(walletId, input);
+    set((state) => ({
+      wallets: state.wallets.map((w) => (w.id === walletId ? updated : w)),
+    }));
   },
 
   // Ответ сервера содержит пересчитанные spent и limit — подставляем его целиком,

@@ -7,7 +7,7 @@ import {
   RefreshCw,
   WalletMinimal,
 } from 'lucide-react';
-import type { Transaction } from '@budget/shared';
+import type { Transaction, Wallet } from '@budget/shared';
 import { useBudgetStore } from '@/stores/useBudgetStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -27,6 +27,7 @@ import { DragNode, DropNode } from '@/features/dnd-matrix/dnd-nodes';
 import { CategoryPager } from '@/features/category-pager/CategoryPager';
 import { CreateEntitySheet, type EntityKind } from '@/features/entity-editor/CreateEntitySheet';
 import { EditCategorySheet } from '@/features/entity-editor/EditCategorySheet';
+import { EditWalletSheet } from '@/features/entity-editor/EditWalletSheet';
 import { OperationSheet } from '@/features/tx-editor/OperationSheet';
 import { EditTransactionSheet } from '@/features/tx-editor/EditTransactionSheet';
 import { QuickAddSheet } from '@/features/tx-editor/QuickAddSheet';
@@ -56,6 +57,7 @@ export function HomeScreen() {
 
   const [openCategory, setOpenCategory] = useState<CategoryWithStats | null>(null);
   const [editingCategory, setEditingCategory] = useState<CategoryWithStats | null>(null);
+  const [editingWallet, setEditingWallet] = useState<Wallet | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [quickAdd, setQuickAdd] = useState(false);
   const [creating, setCreating] = useState<EntityKind | null>(null);
@@ -169,14 +171,24 @@ export function HomeScreen() {
 
       <CalendarPanel />
 
-      <Section title="Источники дохода" hint="Потяните в кошелёк, чтобы зачислить">
+      <Section title="Источники дохода" hint="Потяните в кошелёк · нажмите, чтобы изменить">
         <div className="flex flex-wrap gap-2">
           {incomes.map((c) => (
             <DragNode key={c.id} kind="income" id={c.id} label={`Доход: ${c.name}`}>
-              <span className="glass flex min-h-11 cursor-grab items-center gap-2 rounded-full px-4 text-sm active:cursor-grabbing">
+              {/* Нажатие открывает правку; жест перетаскивания включается только
+                  после сдвига на 8px, поэтому обычный тап их не путает */}
+              <button
+                type="button"
+                aria-label={`Источник дохода ${c.name}, изменить`}
+                onClick={() => {
+                  haptics.selection();
+                  setEditingCategory(c);
+                }}
+                className="glass flex min-h-11 cursor-grab items-center gap-2 rounded-full px-4 text-sm active:cursor-grabbing"
+              >
                 <CategoryIcon name={c.icon} color={c.color ?? 'var(--color-success)'} size={18} />
                 {c.name}
-              </span>
+              </button>
             </DragNode>
           ))}
           <AddButton label="Источник дохода" onClick={() => setCreating('income')} pill />
@@ -185,7 +197,7 @@ export function HomeScreen() {
 
       <Section
         title="Кошельки"
-        hint="Цель зачисления и источник трат"
+        hint="Цель зачисления и источник трат · нажмите, чтобы изменить"
         total={totalBalance}
         totalLabel={`Всего на кошельках: ${formatMoney(totalBalance, currency)}`}
       >
@@ -199,6 +211,11 @@ export function HomeScreen() {
                   <DragNode kind="wallet" id={w.id} label={`Кошелёк: ${w.name}`}>
                     <GlassCard
                       highlighted={isOver && isAllowed}
+                      ariaLabel={`Кошелёк ${w.name}, изменить`}
+                      onClick={() => {
+                        haptics.selection();
+                        setEditingWallet(w);
+                      }}
                       className="flex cursor-grab items-center gap-3 active:cursor-grabbing"
                     >
                       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand/15 text-brand">
@@ -324,6 +341,7 @@ export function HomeScreen() {
         }}
       />
       <EditCategorySheet category={editingCategory} onClose={() => setEditingCategory(null)} />
+      <EditWalletSheet wallet={editingWallet} onClose={() => setEditingWallet(null)} />
       <OperationSheet />
       <EditTransactionSheet transaction={editing} onClose={() => setEditing(null)} />
       <QuickAddSheet open={quickAdd} onClose={() => setQuickAdd(false)} />

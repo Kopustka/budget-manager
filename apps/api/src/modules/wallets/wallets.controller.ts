@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { MAX_WALLETS, createWalletSchema } from '@budget/shared';
+import { MAX_WALLETS, createWalletSchema, updateWalletSchema } from '@budget/shared';
+import { pool } from '../../config/db.js';
 import { authenticate } from '../../shared/auth.js';
 import { requireProfile } from '../../shared/current-profile.js';
 import { parseOrThrow } from '../../shared/validate.js';
@@ -30,5 +31,22 @@ export async function walletsRoutes(app: FastifyInstance): Promise<void> {
     const wallet = await walletsRepository.create(profile.id, input.name, input.balance, profile.currency);
     cache.setWalletBalance(profile.id, wallet.id, wallet.balance);
     return reply.code(201).send(wallet);
+  });
+
+  /**
+   * Правка кошелька: название и/или коррекция баланса.
+   *
+   * findOwned до update — чтобы чужой id вернул 404, а не молча ничего не
+   * обновил. Баланс задаётся абсолютным значением, поэтому после записи просто
+   * перегреваем быстрый слой новым числом.
+   */
+  app.patch<{ Params: { id: string } }>('/wallets/:id', async (req) => {
+    const profile = requireProfile(req);
+    const input = parseOrThrow(updateWalletSchema, req.body);
+    await walletsRepository.findOwned(pool, profile.id, req.params.id);
+
+    const wallet = await walletsRepository.update(profile.id, req.params.id, input);
+    cache.setWalletBalance(profile.id, wallet.id, wallet.balance);
+    return wallet;
   });
 }
