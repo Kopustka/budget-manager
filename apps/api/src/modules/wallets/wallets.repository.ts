@@ -64,6 +64,41 @@ export const walletsRepository = {
   },
 
   /**
+   * Правка кошелька: название и/или итоговый баланс. Баланс здесь задаётся
+   * абсолютным значением — это ручная коррекция «сколько на самом деле лежит»,
+   * а не проведение операции, поэтому в историю ничего не пишем.
+   */
+  async update(
+    profileId: string,
+    walletId: string,
+    patch: { name?: string; balance?: number },
+  ): Promise<Wallet> {
+    const sets: string[] = [];
+    const values: unknown[] = [walletId, profileId];
+    if (patch.name !== undefined) {
+      values.push(patch.name);
+      sets.push(`name = $${values.length}`);
+    }
+    if (patch.balance !== undefined) {
+      values.push(patch.balance);
+      sets.push(`balance = $${values.length}`);
+    }
+    if (sets.length === 0) return this.findOwned(pool, profileId, walletId);
+
+    try {
+      const { rows } = await pool.query<WalletRow>(
+        `UPDATE wallets SET ${sets.join(', ')}
+         WHERE id = $1 AND profile_id = $2 RETURNING *`,
+        values,
+      );
+      if (!rows[0]) throw new NotFoundError('Кошелёк не найден');
+      return toWallet(rows[0]);
+    } catch (err) {
+      throw asDuplicateError(err, 'Кошелёк с таким названием уже есть');
+    }
+  },
+
+  /**
    * Кошелёк пользователя. `forUpdate` берёт строчную блокировку — обязателен
    * внутри транзакции, чтобы параллельные списания не разъехались по балансу.
    */
