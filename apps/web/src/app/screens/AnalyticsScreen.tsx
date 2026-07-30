@@ -20,6 +20,7 @@ import { DonutChart, type DonutSlice } from '@/features/analytics/DonutChart';
 import { VelocityChart } from '@/features/analytics/VelocityChart';
 import { ForecastCard } from '@/features/analytics/ForecastCard';
 import { NoSpendCard } from '@/features/analytics/NoSpendCard';
+import { PlanCard } from '@/features/analytics/PlanCard';
 import { buildColorMap, CHART_REST, MAX_SLICES } from '@/features/analytics/chart-palette';
 import { cn } from '@/shared/ui/cn';
 
@@ -62,10 +63,15 @@ export function AnalyticsScreen() {
     };
   }, [attempt]);
 
+  const expenseCategories = useMemo(
+    () => categories.filter((c) => c.kind === 'expense'),
+    [categories],
+  );
+
   /** Цвет закреплён за категорией по порядку создания — рейтинг на него не влияет. */
   const colorMap = useMemo(
-    () => buildColorMap(categories.filter((c) => c.kind === 'expense').map((c) => c.id)),
-    [categories],
+    () => buildColorMap(expenseCategories.map((c) => c.id)),
+    [expenseCategories],
   );
 
   /**
@@ -173,6 +179,14 @@ export function AnalyticsScreen() {
           />
         </GlassCard>
       )}
+
+      <section className="pb-6">
+        <div className="pb-2">
+          <h2 className="text-sm font-semibold text-ink-muted">Соответствие плану</h2>
+          <p className="text-[11px] text-ink-faint">Факт против запланированного по категориям</p>
+        </div>
+        {loading ? <Skeleton className="h-24 w-full" /> : <PlanCard categories={expenseCategories} />}
+      </section>
 
       <section className="pb-6">
         <div className="pb-2">

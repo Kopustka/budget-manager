@@ -69,7 +69,7 @@ export function EditTransactionSheet({ transaction, onClose }: EditTransactionSh
       applyEditResult(result);
       if (result.isOverdraft) {
         haptics.error();
-        notify('После правки лимит категории превышен', 'error');
+        notify('После правки план категории превышен', 'error');
       } else {
         haptics.success();
         notify('Сохранено', 'success');

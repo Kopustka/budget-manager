@@ -16,17 +16,20 @@ interface CategoryCardProps {
 const STATUS_LABEL = {
   NONE: '',
   SAFE: '',
-  WARNING: ', лимит на исходе',
-  EXCEEDED: ', лимит исчерпан',
+  WARNING: ', план на исходе',
+  EXCEEDED: ', план исчерпан',
 } as const;
 
 /**
  * Карточка категории расхода: цель перетаскивания из кошелька и прогресс по
- * запланированному бюджету.
+ * плану расходов.
  *
  * План и факт компонент не получает пропсами, а берёт из стора селектором:
  * после Drag-and-Drop обновляется одно число spent, и перекрашивается ровно эта
  * карточка — соседние по странице не перерисовываются.
+ *
+ * На карточке видны сразу и факт (крупно), и план (справа снизу), а прогресс —
+ * только полосой без процента: точную сумму плана теперь не нужно искать в шторке.
  */
 export function CategoryCard({ category, onOpen }: CategoryCardProps) {
   const { spent, limit, status } = useCategoryBudget(category.id);
@@ -39,7 +42,10 @@ export function CategoryCard({ category, onOpen }: CategoryCardProps) {
           danger={status === 'EXCEEDED'}
           warning={status === 'WARNING'}
           highlighted={isOver && isAllowed}
-          ariaLabel={`Категория ${category.name}${STATUS_LABEL[status]}, подробности`}
+          ariaLabel={
+            `Категория ${category.name}${STATUS_LABEL[status]}, потрачено` +
+            `${limit !== null ? ' из плана' : ''}, подробности`
+          }
           onClick={() => {
             haptics.selection();
             onOpen(category);
@@ -56,9 +62,14 @@ export function CategoryCard({ category, onOpen }: CategoryCardProps) {
           {/* mt-auto прижимает прогресс к низу — карточки в сетке выглядят выровненными */}
           <div className="mt-auto">
             {limit !== null ? (
-              <LimitBar spent={spent} limit={limit} status={status} dense />
+              <>
+                <LimitBar spent={spent} limit={limit} status={status} dense showText={false} />
+                <p className="tabular pt-1 text-right text-[10px] text-ink-faint">
+                  план <Money value={limit} compact className="text-ink-muted" />
+                </p>
+              </>
             ) : (
-              <p className="text-[10px] text-ink-faint">Без лимита</p>
+              <p className="text-[10px] text-ink-faint">Без плана</p>
             )}
           </div>
         </GlassCard>

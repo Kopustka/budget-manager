@@ -79,7 +79,7 @@ export function OperationSheet() {
       // Овердрафт — не ошибка операции, но пользователь обязан её заметить.
       if (result.isOverdraft) {
         haptics.error();
-        notify(`Лимит категории «${category?.name ?? ''}» превышен`, 'error');
+        notify(`План по категории «${category?.name ?? ''}» превышен`, 'error');
       } else {
         haptics.success();
         notify(isDeposit ? 'Зачислено' : 'Списано', 'success');

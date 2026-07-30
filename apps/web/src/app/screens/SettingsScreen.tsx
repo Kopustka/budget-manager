@@ -87,7 +87,7 @@ export function SettingsScreen() {
         <GlassCard>
           <p className="pb-3 text-sm text-ink-muted">
             С какого числа начинается ваш расчётный месяц. Например, если зарплата приходит
-            2-го, выберите 2 — лимиты и аналитика будут считаться со 2-го по 1-е.
+            2-го, выберите 2 — планы и аналитика будут считаться со 2-го по 1-е.
           </p>
           <div className="grid grid-cols-7 gap-1.5">
             {Array.from({ length: MAX_MONTH_START_DAY }, (_, i) => i + 1).map((day) => (
@@ -308,7 +308,7 @@ function CurrencySheet({
       <div className="mt-4 flex gap-3 rounded-2xl border border-danger/40 bg-danger/10 p-3">
         <AlertTriangle size={18} strokeWidth={2} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
         <p className="text-sm text-danger">
-          Все балансы, операции и лимиты будут умножены на курс. Отменить пересчёт из
+          Все балансы, операции и планы будут умножены на курс. Отменить пересчёт из
           приложения нельзя.
         </p>
       </div>

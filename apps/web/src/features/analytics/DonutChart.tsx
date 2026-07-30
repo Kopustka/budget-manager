@@ -160,7 +160,7 @@ export function DonutChart({ slices, total, free = null }: DonutChartProps) {
                     size={15}
                     strokeWidth={2}
                     className="shrink-0 text-danger"
-                    aria-label="лимит превышен"
+                    aria-label="план превышен"
                   />
                 ) : null}
                 <span className="tabular shrink-0 text-ink-muted">{formatPercent(share)}</span>

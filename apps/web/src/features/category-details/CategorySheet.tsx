@@ -114,7 +114,7 @@ export function CategorySheet({ category, onClose, onEdit }: CategorySheetProps)
           }}
         >
           <SlidersHorizontal size={18} strokeWidth={1.75} aria-hidden="true" />
-          {category.limit === null ? 'Задать лимит' : 'Настроить'}
+          {category.limit === null ? 'Задать план' : 'Настроить'}
         </Button>
       }
     >
@@ -134,7 +134,7 @@ export function CategorySheet({ category, onClose, onEdit }: CategorySheetProps)
           <p className="mt-2 text-sm text-ink-muted">
             {rest !== null && rest >= 0 ? (
               <>
-                Остаток лимита: <Money value={rest} className="text-ink" />
+                Остаток плана: <Money value={rest} className="text-ink" />
               </>
             ) : (
               <>
@@ -144,7 +144,7 @@ export function CategorySheet({ category, onClose, onEdit }: CategorySheetProps)
           </p>
         </div>
       ) : (
-        <p className="pb-4 text-sm text-ink-faint">Лимит на период не задан</p>
+        <p className="pb-4 text-sm text-ink-faint">План на период не задан</p>
       )}
 
       <div className="flex items-baseline justify-between pb-2">
