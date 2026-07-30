@@ -74,6 +74,20 @@ async function drag(from, to) {
 const balance = async () =>
   (await page.locator('header .tabular').first().innerText()).replace(/\s|₽/g, '');
 
+/** Ввод суммы через встроенную клавиатуру-калькулятор (системной больше нет). */
+async function enterAmount(digits, { clear = false } = {}) {
+  await page.getByRole('button', { name: 'Сумма, изменить' }).first().click();
+  await page.waitForTimeout(200);
+  if (clear) await page.getByRole('button', { name: 'Очистить', exact: true }).click();
+  for (const ch of String(digits)) {
+    const name = ch === ',' || ch === '.' ? 'Запятая' : ch;
+    await page.getByRole('button', { name, exact: true }).click();
+    await page.waitForTimeout(30);
+  }
+  await page.getByRole('button', { name: 'Готово', exact: true }).click();
+  await page.waitForTimeout(150);
+}
+
 await page.goto(BASE_URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
 
@@ -124,7 +138,7 @@ console.log('\n[4] Списание: Кошелёк → Категория');
 await drag(wallet, categoryCard);
 const spendSheet = page.getByRole('dialog');
 check('открылась шторка списания', (await spendSheet.count()) === 1);
-await spendSheet.getByRole('textbox').first().fill('500');
+await enterAmount('500');
 await page.screenshot({ path: '/tmp/e2e-3-spend-sheet.png' });
 await spendSheet.getByRole('button', { name: 'Списать' }).click();
 await page.waitForTimeout(900);
@@ -140,7 +154,7 @@ await txCard.click();
 await page.waitForTimeout(400);
 const editSheet = page.getByRole('dialog');
 check('открылась шторка правки', (await editSheet.count()) === 1);
-await editSheet.getByRole('textbox').first().fill('200');
+await enterAmount('200', { clear: true });
 await page.screenshot({ path: '/tmp/e2e-4-edit-sheet.png' });
 await editSheet.getByRole('button', { name: 'Сохранить' }).click();
 await page.waitForTimeout(900);

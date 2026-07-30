@@ -1,8 +1,9 @@
-import { useId } from 'react';
-import { currencyInfo } from '@budget/shared';
+import { useEffect, useId } from 'react';
 import { useCurrency } from '@/shared/lib/useCurrency';
 import { formatMoney } from '@/shared/lib/format';
 import { haptics } from '@/shared/lib/telegram';
+import { useNumpadStore } from '@/stores/useNumpadStore';
+import { parseAmount } from '@/features/tx-editor/AmountField';
 import { cn } from '@/shared/ui/cn';
 
 interface LimitFieldProps {
@@ -14,46 +15,56 @@ interface LimitFieldProps {
 
 /** Типовые месячные бюджеты — чтобы не набирать четыре нуля вручную. */
 const PRESETS = [5_000, 10_000, 30_000];
+const TITLE = 'Бюджет на месяц';
 
 /**
- * Ввод запланированного месячного бюджета категории.
+ * Ввод запланированного месячного бюджета категории через встроенную клавиатуру.
  *
  * Пустое поле — осознанное «без лимита», а не ошибка: планировать все категории
  * сразу никто не станет, и требовать сумму значило бы получить выдуманные числа.
+ * Очистка клавиатуры (C или стирание) как раз и возвращает поле в это состояние.
  */
 export function LimitField({ value, onChange, error }: LimitFieldProps) {
   const id = useId();
   const currency = useCurrency();
-  const symbol = currencyInfo(currency).symbol;
+  const openFor = useNumpadStore((s) => s.openFor);
+  const setOperand = useNumpadStore((s) => s.setOperand);
+  const active = useNumpadStore((s) => s.open && s.fieldId === id);
+
+  useEffect(
+    () => () => {
+      const s = useNumpadStore.getState();
+      if (s.fieldId === id) s.close();
+    },
+    [id],
+  );
+
+  const parsed = parseAmount(value);
+  const display = parsed !== null ? formatMoney(parsed, currency) : 'без лимита';
 
   return (
     <div>
-      <label htmlFor={id} className="block pb-1 text-sm text-ink-muted">
-        Запланированный бюджет на месяц
-      </label>
-      <div className="relative">
-        <input
-          id={id}
-          inputMode="decimal"
-          value={value}
-          onChange={(e) => onChange(e.target.value.replace(/[^\d.,]/g, ''))}
-          placeholder="без лимита"
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? `${id}-error` : `${id}-hint`}
-          className={cn(
-            'tabular w-full rounded-2xl bg-hairline py-3 pr-10 pl-4 text-xl font-semibold',
-            'outline-none placeholder:text-base placeholder:font-normal placeholder:text-ink-faint',
-            'transition-colors duration-[var(--duration-fast)]',
-            error && 'ring-2 ring-danger',
-          )}
-        />
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-4 grid place-items-center text-ink-faint"
-        >
-          {symbol}
-        </span>
-      </div>
+      <span className="block pb-1 text-sm text-ink-muted">Запланированный бюджет на месяц</span>
+      <button
+        type="button"
+        id={id}
+        aria-label={`${TITLE}, изменить`}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : `${id}-hint`}
+        onClick={() => {
+          haptics.selection();
+          openFor(id, { title: TITLE, value, onChange });
+        }}
+        className={cn(
+          'tabular w-full rounded-2xl bg-hairline px-4 py-3 text-left text-xl font-semibold',
+          'transition-colors duration-[var(--duration-fast)]',
+          parsed === null && 'text-base font-normal text-ink-faint',
+          active && 'ring-2 ring-brand',
+          error && 'ring-2 ring-danger',
+        )}
+      >
+        {display}
+      </button>
 
       {error ? (
         <p id={`${id}-error`} className="pt-1 text-sm text-danger">
@@ -73,7 +84,8 @@ export function LimitField({ value, onChange, error }: LimitFieldProps) {
             type="button"
             onClick={() => {
               haptics.selection();
-              onChange(String(amount));
+              if (active) setOperand(String(amount));
+              else onChange(String(amount));
             }}
             className="min-h-11 rounded-full bg-hairline px-4 text-sm transition-colors duration-[var(--duration-fast)] active:bg-hairline-strong"
           >

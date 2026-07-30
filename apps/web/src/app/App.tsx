@@ -9,6 +9,7 @@ import { HistoryScreen } from './screens/HistoryScreen';
 import { AnalyticsScreen } from './screens/AnalyticsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { DndMatrixProvider } from '@/features/dnd-matrix/DndMatrixProvider';
+import { Numpad } from '@/features/tx-editor/Numpad';
 import { haptics } from '@/shared/lib/telegram';
 import { cn } from '@/shared/ui/cn';
 
@@ -78,6 +79,9 @@ export function App() {
           })}
         </div>
       </nav>
+
+      {/* Экранная клавиатура сумм — одна на всё приложение, поверх любой шторки */}
+      <Numpad />
     </div>
   );
 }
