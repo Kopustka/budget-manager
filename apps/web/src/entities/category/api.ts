@@ -31,4 +31,7 @@ export const categoryApi = {
 
   setLimit: (categoryId: string, period: string, limitAmount: number) =>
     api.put(`/categories/${categoryId}/limit`, { period, limitAmount }),
+
+  /** Удаление категории/источника. Операции остаются в истории без категории. */
+  remove: (categoryId: string) => api.delete<void>(`/categories/${categoryId}`),
 };

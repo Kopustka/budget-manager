@@ -70,6 +70,12 @@ function check(name: string, ok: boolean, detail?: unknown): void {
  */
 async function cleanup(profileId: string): Promise<void> {
   const patterns = [`${PREFIX}%`, 'e2e %'];
+  // Осиротевшие операции удалённых сущностей: после удаления кошелька/категории
+  // их ссылки обнулены, и join по имени их уже не поймает — чистим по комментарию.
+  await pool.query('DELETE FROM transactions WHERE profile_id = $1 AND comment LIKE ANY($2)', [
+    profileId,
+    patterns,
+  ]);
   await pool.query(
     `DELETE FROM transactions WHERE profile_id = $1
        AND category_id IN (SELECT id FROM categories WHERE profile_id = $1 AND name LIKE ANY($2))`,
@@ -222,6 +228,63 @@ async function main(): Promise<void> {
     (overflow.data?.error?.message ?? '').includes(String(MAX_WALLETS)),
     overflow.data,
   );
+
+  console.log('\n[7] Удаление сущностей');
+
+  // Источник дохода без операций — простой случай.
+  const delIncome = await api('DELETE', `/api/categories/${income.data.id}`);
+  check('источник дохода удалён (204)', delIncome.status === 204, delIncome);
+
+  // Категория с операцией: сама уходит, а трата остаётся в истории без категории.
+  const delExpense = await api('DELETE', `/api/categories/${expense.data.id}`);
+  check('категория удалена (204)', delExpense.status === 204, delExpense);
+
+  const catsAfter = await api<{ items: Array<{ id: string }> }>('GET', '/api/categories');
+  check(
+    'удалённых категорий нет в матрице',
+    !catsAfter.data.items.some((c) => c.id === expense.data.id || c.id === income.data.id),
+  );
+
+  const orphanCat = await pool.query<{ category_id: string | null }>(
+    'SELECT category_id FROM transactions WHERE profile_id = $1 AND comment = $2',
+    [userId, `${PREFIX} тестовая трата`],
+  );
+  check('операция удалённой категории осталась в истории', orphanCat.rowCount === 1, orphanCat.rows);
+  check(
+    'но уже без категории (category_id = null)',
+    orphanCat.rows[0]?.category_id === null,
+    orphanCat.rows[0],
+  );
+
+  // Кошелёк с операцией: уходит вместе с балансом, трата остаётся без кошелька.
+  const delWallet = await api('DELETE', `/api/wallets/${wallet.data.id}`);
+  check('кошелёк удалён (204)', delWallet.status === 204, delWallet);
+
+  const walletsGone = await api<{ items: Array<{ id: string }> }>('GET', '/api/wallets');
+  check(
+    'удалённого кошелька нет в списке',
+    !walletsGone.data.items.some((w) => w.id === wallet.data.id),
+  );
+
+  const orphanWallet = await pool.query<{ wallet_id: string | null }>(
+    'SELECT wallet_id FROM transactions WHERE profile_id = $1 AND comment = $2',
+    [userId, `${PREFIX} тестовая трата`],
+  );
+  check('операция удалённого кошелька осталась', orphanWallet.rowCount === 1, orphanWallet.rows);
+  check(
+    'но уже без кошелька (wallet_id = null)',
+    orphanWallet.rows[0]?.wallet_id === null,
+    orphanWallet.rows[0],
+  );
+
+  // Несуществующий id — 404, а не молчаливый успех.
+  const ghost = await api<ApiErrorBody>('DELETE', `/api/wallets/${wallet.data.id}`);
+  check('повторное удаление кошелька — 404', ghost.status === 404, ghost);
+  const ghostCat = await api<ApiErrorBody>(
+    'DELETE',
+    '/api/categories/00000000-0000-0000-0000-000000000000',
+  );
+  check('удаление несуществующей категории — 404', ghostCat.status === 404, ghostCat);
 
   await cleanup(userId);
   console.log(failures === 0 ? '\n🎉 Все проверки пройдены' : `\n💥 Провалено: ${failures}`);

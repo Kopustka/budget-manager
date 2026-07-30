@@ -49,4 +49,15 @@ export async function walletsRoutes(app: FastifyInstance): Promise<void> {
     cache.setWalletBalance(profile.id, wallet.id, wallet.balance);
     return wallet;
   });
+
+  /**
+   * Удаление кошелька. Операции по нему остаются в истории без кошелька
+   * (wallet_id → NULL), а его баланс перестаёт учитываться в общем итоге.
+   */
+  app.delete<{ Params: { id: string } }>('/wallets/:id', async (req, reply) => {
+    const profile = requireProfile(req);
+    await walletsRepository.remove(profile.id, req.params.id);
+    cache.clearWalletBalance(profile.id, req.params.id);
+    return reply.code(204).send();
+  });
 }

@@ -32,8 +32,12 @@ interface BudgetState {
   addCategory: (input: CreateCategoryInput) => Promise<void>;
   /** Правка названия и/или коррекция баланса кошелька. */
   updateWallet: (walletId: string, input: UpdateWalletInput) => Promise<void>;
+  /** Удаление кошелька: операции по нему осиротеют (walletId → null). */
+  deleteWallet: (walletId: string) => Promise<void>;
   /** Правка категории и её месячного плана. */
   updateCategory: (categoryId: string, input: UpdateCategoryInput) => Promise<void>;
+  /** Удаление категории/источника: операции по ней осиротеют (categoryId → null). */
+  deleteCategory: (categoryId: string) => Promise<void>;
   applyDndResult: (result: DndPatch) => void;
   applyEditResult: (result: DndPatch) => void;
   /** Удаление: транзакция уходит из ленты, баланс приходит из ответа,
@@ -97,6 +101,19 @@ export const useBudgetStore = create<BudgetState>((set) => ({
     }));
   },
 
+  // Сервер удаляет кошелёк и обнуляет ссылку у его операций (wallet_id → null).
+  // Повторяем это в сторе, чтобы лента тут же перестала указывать на исчезнувший
+  // кошелёк, а не ждала перезагрузки экрана.
+  async deleteWallet(walletId) {
+    await walletApi.remove(walletId);
+    set((state) => ({
+      wallets: state.wallets.filter((w) => w.id !== walletId),
+      transactions: state.transactions.map((t) =>
+        t.walletId === walletId ? { ...t, walletId: null } : t,
+      ),
+    }));
+  },
+
   // Ответ сервера содержит пересчитанные spent и limit — подставляем его целиком,
   // а не собираем новую категорию из полей формы: смена лимита меняет и статус,
   // а он должен считаться по тем же числам, что лежат в базе.
@@ -104,6 +121,19 @@ export const useBudgetStore = create<BudgetState>((set) => ({
     const updated = await categoryApi.update(categoryId, input);
     set((state) => ({
       categories: state.categories.map((c) => (c.id === categoryId ? updated : c)),
+    }));
+  },
+
+  // Сервер удаляет категорию и обнуляет ссылку у её операций (category_id → null).
+  // Убираем её из матрицы и осиротим операции в ленте: история сохранится, но уже
+  // без категории — ровно как её отдаст сервер при следующей загрузке.
+  async deleteCategory(categoryId) {
+    await categoryApi.remove(categoryId);
+    set((state) => ({
+      categories: state.categories.filter((c) => c.id !== categoryId),
+      transactions: state.transactions.map((t) =>
+        t.categoryId === categoryId ? { ...t, categoryId: null } : t,
+      ),
     }));
   },
 

@@ -165,6 +165,22 @@ export async function categoriesRoutes(app: FastifyInstance): Promise<void> {
     return withStats(profile.id, profile.monthStartDay, period, updated);
   });
 
+  /**
+   * Удаление категории или источника дохода. Операции по ней остаются в истории
+   * без категории (category_id → NULL), план на месяц снимается вместе со строкой.
+   */
+  app.delete<{ Params: { id: string } }>('/categories/:id', async (req, reply) => {
+    const profile = requireProfile(req);
+    const category = await categoriesRepository.findOwned(pool, profile.id, req.params.id);
+    await categoriesRepository.remove(profile.id, category.id);
+    // Быстрый слой производный: подчищаем траты и лимит удалённой категории за
+    // текущий период — остальные периоды дочитаются из PG при следующем запросе.
+    const period = periodOf(new Date(), profile.monthStartDay);
+    cache.clearSpent(profile.id, period, category.id);
+    cache.clearLimit(profile.id, period, category.id);
+    return reply.code(204).send();
+  });
+
   /** Установка/обновление лимита категории на период. */
   app.put<{ Params: { id: string } }>('/categories/:id/limit', async (req) => {
     const profile = requireProfile(req);

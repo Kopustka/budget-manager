@@ -23,6 +23,11 @@ export const cache = {
     (pipe ?? redis).hset(rkey.wallets(profileId), walletId, String(balance));
   },
 
+  /** Убрать баланс удалённого кошелька из быстрого слоя. */
+  clearWalletBalance(profileId: string, walletId: string, pipe?: ChainableCommander): void {
+    (pipe ?? redis).hdel(rkey.wallets(profileId), walletId);
+  },
+
   // ── Накопленные траты по категории ──
   async getSpent(profileId: string, period: string, categoryId: string): Promise<number> {
     const v = await redis.hget(rkey.spent(profileId, period), categoryId);
@@ -48,6 +53,11 @@ export const cache = {
     pipe?: ChainableCommander,
   ): void {
     (pipe ?? redis).hset(rkey.spent(profileId, period), categoryId, String(spent));
+  },
+
+  /** Убрать накопленные траты удалённой категории из быстрого слоя. */
+  clearSpent(profileId: string, period: string, categoryId: string, pipe?: ChainableCommander): void {
+    (pipe ?? redis).hdel(rkey.spent(profileId, period), categoryId);
   },
 
   // ── Лимиты по категории ──

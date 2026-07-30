@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { CATEGORY_COLORS, CATEGORY_ICONS, type UpdateCategoryInput } from '@budget/shared';
 import { BottomSheet } from '@/shared/ui/BottomSheet';
 import { Button } from '@/shared/ui/Button';
@@ -36,6 +37,7 @@ function limitToInput(limit: number | null): string {
  */
 export function EditCategorySheet({ category, onClose }: EditCategorySheetProps) {
   const updateCategory = useBudgetStore((s) => s.updateCategory);
+  const deleteCategory = useBudgetStore((s) => s.deleteCategory);
   const notify = useUiStore((s) => s.notify);
 
   const [name, setName] = useState('');
@@ -44,6 +46,7 @@ export function EditCategorySheet({ category, onClose }: EditCategorySheetProps)
   const [limit, setLimit] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Форма заполняется текущими значениями при каждом открытии: правка — это
   // изменение того, что есть, а не ввод с нуля.
@@ -54,6 +57,7 @@ export function EditCategorySheet({ category, onClose }: EditCategorySheetProps)
     setColor(category.color);
     setLimit(limitToInput(category.limit));
     setError(null);
+    setConfirmDelete(false);
   }, [category]);
 
   if (!category) return null;
@@ -110,15 +114,56 @@ export function EditCategorySheet({ category, onClose }: EditCategorySheetProps)
     }
   }
 
+  async function remove() {
+    if (!category) return;
+    // Удаление необратимо — требуем второй тап вместо мгновенного действия.
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      haptics.warning();
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await deleteCategory(category.id);
+      haptics.success();
+      notify(isExpense ? 'Категория удалена' : 'Источник удалён', 'success');
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось удалить');
+      haptics.error();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <BottomSheet
       open
       title={isExpense ? 'Настройки категории' : 'Настройки источника'}
       onClose={onClose}
       footer={
-        <Button full disabled={saving} onClick={() => void submit()}>
-          {saving ? 'Сохраняем…' : 'Сохранить'}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant={confirmDelete ? 'danger' : 'secondary'}
+            disabled={saving}
+            onClick={() => void remove()}
+            aria-label={
+              confirmDelete
+                ? 'Подтвердить удаление'
+                : isExpense
+                  ? 'Удалить категорию'
+                  : 'Удалить источник'
+            }
+          >
+            <Trash2 size={18} strokeWidth={1.75} aria-hidden="true" />
+            {confirmDelete ? 'Точно удалить' : ''}
+          </Button>
+          <Button full disabled={saving} onClick={() => void submit()}>
+            {saving ? 'Сохраняем…' : 'Сохранить'}
+          </Button>
+        </div>
       }
     >
       <label className="block text-sm">
@@ -183,6 +228,14 @@ export function EditCategorySheet({ category, onClose }: EditCategorySheetProps)
           <LimitField value={limit} onChange={setLimit} />
         </div>
       )}
+
+      {confirmDelete ? (
+        <p className="pt-4 text-xs text-danger">
+          {isExpense
+            ? 'Категория удалится, её операции останутся в истории без категории, а план на месяц сбросится.'
+            : 'Источник удалится, его операции останутся в истории без источника.'}
+        </p>
+      ) : null}
 
       {error ? <p className="pt-3 text-sm text-danger">{error}</p> : null}
     </BottomSheet>
