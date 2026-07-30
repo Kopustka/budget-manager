@@ -2,10 +2,12 @@
 <html lang="ru" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <!-- viewport-fit=cover — обязателен, чтобы работали safe-area-inset на устройствах с вырезом -->
+    <!-- viewport-fit=cover — обязателен, чтобы работали safe-area-inset на устройствах с вырезом.
+         maximum-scale=1 + user-scalable=no — приложение не масштабируется жестом:
+         это Mini App, а не веб-страница, и «щипок» ломал бы фиксированную вёрстку. -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
     />
     <meta name="theme-color" content="#0D0E12" />
     <title>Budget Manager</title>

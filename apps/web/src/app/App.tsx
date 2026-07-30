@@ -37,8 +37,9 @@ export function App() {
     <div className="min-h-full text-ink">
       <Toaster />
 
-      {/* Отступ снизу — под фиксированную панель, иначе она закрывает конец списка */}
-      <div className="pb-24">
+      {/* Отступ снизу — под фиксированную панель, иначе она закрывает конец списка.
+          key={tab} + анимация page-in дают мягкий переход при смене вкладки. */}
+      <div key={tab} className="animate-[page-in_var(--duration-base)_var(--ease-ios)] pb-24">
         {tab === 'home' && (
           <DndMatrixProvider>
             <HomeScreen />

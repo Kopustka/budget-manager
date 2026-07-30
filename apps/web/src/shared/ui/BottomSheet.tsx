@@ -20,23 +20,32 @@ interface BottomSheetProps {
 export function BottomSheet({ open, title, onClose, children, footer }: BottomSheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // onClose через ref: некоторые шторки пересоздают колбэк на каждый свой рендер
+  // (например, при вводе в поле). Если бы эффект зависел от onClose, он бы
+  // перезапускался на каждый символ и заново тянул фокус на панель — фокус
+  // слетал бы с input, и системная клавиатура закрывалась после первой же буквы.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKey);
 
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    // Фокус на панель забираем только при открытии, а не на каждом рендере —
+    // иначе он конкурирует с полем ввода внутри шторки.
     panelRef.current?.focus();
 
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
