@@ -9,4 +9,7 @@ export const walletApi = {
   /** Правка названия и/или коррекция баланса. */
   update: (walletId: string, input: UpdateWalletInput) =>
     api.patch<Wallet>(`/wallets/${walletId}`, input),
+
+  /** Удаление кошелька. Операции по нему остаются в истории без кошелька. */
+  remove: (walletId: string) => api.delete<void>(`/wallets/${walletId}`),
 };

@@ -75,6 +75,20 @@ export const categoriesRepository = {
     return toCategory(rows[0]);
   },
 
+  /**
+   * Удалить категорию. Операции по ней остаются в истории: transactions.category_id
+   * объявлен ON DELETE SET NULL — они просто теряют категорию. Планы на месяц
+   * (category_limits) уходят каскадом, а расписания (planned_transactions) —
+   * SET NULL, поэтому календарь события не теряет.
+   */
+  async remove(profileId: string, categoryId: string): Promise<void> {
+    const { rowCount } = await pool.query(
+      'DELETE FROM categories WHERE id = $1 AND profile_id = $2',
+      [categoryId, profileId],
+    );
+    if (!rowCount) throw new NotFoundError('Категория не найдена');
+  },
+
   /** Лимит категории на период или null, если не задан. */
   async findLimit(db: Queryable, categoryId: string, period: string): Promise<number | null> {
     const { rows } = await db.query<{ limit_amount: string }>(

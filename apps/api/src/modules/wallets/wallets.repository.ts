@@ -99,6 +99,19 @@ export const walletsRepository = {
   },
 
   /**
+   * Удалить кошелёк. Его операции не пропадают: transactions.wallet_id объявлен
+   * ON DELETE SET NULL — история остаётся, но уже без ссылки на кошелёк. Баланс
+   * удаляется вместе со строкой, поэтому из общего итога эти деньги уходят.
+   */
+  async remove(profileId: string, walletId: string): Promise<void> {
+    const { rowCount } = await pool.query(
+      'DELETE FROM wallets WHERE id = $1 AND profile_id = $2',
+      [walletId, profileId],
+    );
+    if (!rowCount) throw new NotFoundError('Кошелёк не найден');
+  },
+
+  /**
    * Кошелёк пользователя. `forUpdate` берёт строчную блокировку — обязателен
    * внутри транзакции, чтобы параллельные списания не разъехались по балансу.
    */

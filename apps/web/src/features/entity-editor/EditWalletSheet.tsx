@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import type { UpdateWalletInput, Wallet } from '@budget/shared';
 import { currencyInfo } from '@budget/shared';
 import { BottomSheet } from '@/shared/ui/BottomSheet';
@@ -7,7 +8,7 @@ import { useBudgetStore } from '@/stores/useBudgetStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { ApiError } from '@/shared/api/client';
 import { haptics } from '@/shared/lib/telegram';
-import { toMajor } from '@/shared/lib/format';
+import { formatMoney, toMajor } from '@/shared/lib/format';
 import { useCurrency } from '@/shared/lib/useCurrency';
 import { AmountField, parseAmount } from '@/features/tx-editor/AmountField';
 
@@ -31,6 +32,7 @@ function balanceToInput(balance: number): string {
  */
 export function EditWalletSheet({ wallet, onClose }: EditWalletSheetProps) {
   const updateWallet = useBudgetStore((s) => s.updateWallet);
+  const deleteWallet = useBudgetStore((s) => s.deleteWallet);
   const notify = useUiStore((s) => s.notify);
   const currency = useCurrency();
 
@@ -38,6 +40,7 @@ export function EditWalletSheet({ wallet, onClose }: EditWalletSheetProps) {
   const [balance, setBalance] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Форма заполняется текущими значениями при каждом открытии.
   useEffect(() => {
@@ -45,6 +48,7 @@ export function EditWalletSheet({ wallet, onClose }: EditWalletSheetProps) {
     setName(wallet.name);
     setBalance(balanceToInput(wallet.balance));
     setError(null);
+    setConfirmDelete(false);
   }, [wallet]);
 
   if (!wallet) return null;
@@ -85,15 +89,50 @@ export function EditWalletSheet({ wallet, onClose }: EditWalletSheetProps) {
     }
   }
 
+  async function remove() {
+    if (!wallet) return;
+    // Удаление необратимо и уносит баланс из общего итога — требуем второй тап.
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      haptics.warning();
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await deleteWallet(wallet.id);
+      haptics.success();
+      notify('Кошелёк удалён', 'success');
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось удалить кошелёк');
+      haptics.error();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <BottomSheet
       open
       title="Настройки кошелька"
       onClose={onClose}
       footer={
-        <Button full disabled={saving} onClick={() => void submit()}>
-          {saving ? 'Сохраняем…' : 'Сохранить'}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant={confirmDelete ? 'danger' : 'secondary'}
+            disabled={saving}
+            onClick={() => void remove()}
+            aria-label={confirmDelete ? 'Подтвердить удаление кошелька' : 'Удалить кошелёк'}
+          >
+            <Trash2 size={18} strokeWidth={1.75} aria-hidden="true" />
+            {confirmDelete ? 'Точно удалить' : ''}
+          </Button>
+          <Button full disabled={saving} onClick={() => void submit()}>
+            {saving ? 'Сохраняем…' : 'Сохранить'}
+          </Button>
+        </div>
       }
     >
       <label className="block text-sm">
@@ -113,6 +152,17 @@ export function EditWalletSheet({ wallet, onClose }: EditWalletSheetProps) {
           сверка с реальностью — операция в историю не попадёт.
         </p>
       </div>
+
+      {confirmDelete ? (
+        <p className="pt-4 text-xs text-danger">
+          Кошелёк удалится, а его операции останутся в истории без кошелька.{' '}
+          {wallet.balance > 0 ? (
+            <>
+              Баланс {formatMoney(wallet.balance, currency)} перестанет учитываться в общем итоге.
+            </>
+          ) : null}
+        </p>
+      ) : null}
 
       {error ? <p className="pt-3 text-sm text-danger">{error}</p> : null}
     </BottomSheet>
