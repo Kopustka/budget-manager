@@ -112,6 +112,19 @@ await page.getByRole('button', { name: 'Все', exact: true }).click();
 await page.waitForTimeout(700);
 await page.screenshot({ path: '/tmp/e2e-history.png', fullPage: true });
 
+/** Ввод суммы через встроенную клавиатуру (системного поля больше нет). */
+async function keypadEnter(digits) {
+  await page.getByRole('button', { name: 'Сумма, изменить' }).first().click();
+  await page.waitForTimeout(200);
+  for (const ch of String(digits)) {
+    const name = ch === ',' || ch === '.' ? 'Запятая' : ch;
+    await page.getByRole('button', { name, exact: true }).click();
+    await page.waitForTimeout(30);
+  }
+  await page.getByRole('button', { name: 'Готово', exact: true }).click();
+  await page.waitForTimeout(150);
+}
+
 console.log('\n[5] Создание кошелька и категории');
 await nav('Главная').click();
 await page.waitForTimeout(900);
@@ -123,7 +136,7 @@ await page.waitForTimeout(300);
 const walletSheet = page.getByRole('dialog');
 check('шторка создания кошелька открылась', (await walletSheet.count()) === 1);
 await walletSheet.getByPlaceholder('например, Карта').fill(walletName);
-await walletSheet.getByLabel('Сумма').fill('300');
+await keypadEnter('300');
 await walletSheet.getByRole('button', { name: 'Создать' }).click();
 await page.waitForTimeout(1200);
 check('кошелёк появился на главной', (await page.getByText(walletName).count()) > 0);
