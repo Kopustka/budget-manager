@@ -81,6 +81,13 @@ export function HomeScreen() {
     [expenses],
   );
 
+  // Суммарный план по категориям — чтобы в шапке раздела было видно не только
+  // сколько потрачено, но и сколько всего запланировано на месяц.
+  const totalPlanned = useMemo(
+    () => expenses.reduce((sum, c) => sum + (c.limit ?? 0), 0),
+    [expenses],
+  );
+
   // ru-locale добавляет «г.» — для заголовка это лишний шум, собираем метку сами.
   // При сдвинутом дне начала месяца календарное название соврало бы, поэтому
   // показываем границы периода как есть: «2 июл — 1 авг».
@@ -240,7 +247,12 @@ export function HomeScreen() {
         title="Категории расходов"
         hint="Бросьте кошелёк на категорию, чтобы списать"
         total={totalSpent}
-        totalLabel={`Потрачено за период: ${formatMoney(totalSpent, currency)}`}
+        plan={totalPlanned}
+        totalLabel={
+          totalPlanned > 0
+            ? `Потрачено ${formatMoney(totalSpent, currency)} из плана ${formatMoney(totalPlanned, currency)}`
+            : `Потрачено за период: ${formatMoney(totalSpent, currency)}`
+        }
       >
         {loading && expenses.length === 0 ? (
           <div className="grid grid-cols-2 gap-3">
@@ -408,6 +420,7 @@ function Section({
   title,
   hint,
   total,
+  plan,
   totalLabel,
   children,
 }: {
@@ -415,6 +428,8 @@ function Section({
   hint?: string;
   /** Итог по разделу в минорных единицах. Не передан — строка с суммой не рисуется. */
   total?: number;
+  /** Суммарный план раздела: показывается рядом с фактом как «X / Y». 0 — не рисуем. */
+  plan?: number;
   /** Что означает сумма — только для скринридера: рядом с заголовком голое число неоднозначно. */
   totalLabel?: string;
   children: React.ReactNode;
@@ -428,6 +443,12 @@ function Section({
           {total !== undefined ? (
             <span className="shrink-0" aria-label={totalLabel}>
               <Money value={total} className="text-sm font-semibold" />
+              {plan !== undefined && plan > 0 ? (
+                <span className="text-ink-faint" aria-hidden="true">
+                  {' / '}
+                  <Money value={plan} className="text-ink-muted" />
+                </span>
+              ) : null}
             </span>
           ) : null}
         </div>

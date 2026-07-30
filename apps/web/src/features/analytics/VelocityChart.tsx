@@ -197,7 +197,7 @@ export function VelocityChart({ points, budget, todayIndex }: VelocityChartProps
           <Money value={(hovered ?? last)?.cumulative ?? 0} compact className="text-ink" />
         </span>
         {budget === null ? (
-          <span className="text-ink-faint">Лимиты не заданы — плановая кривая недоступна</span>
+          <span className="text-ink-faint">Планы не заданы — плановая кривая недоступна</span>
         ) : (
           <span className="flex items-center gap-2">
             <span

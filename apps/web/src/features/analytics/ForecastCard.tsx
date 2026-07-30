@@ -52,7 +52,7 @@ export function ForecastCard({ forecast }: { forecast: ForecastResponse }) {
   const detail = (() => {
     switch (verdict) {
       case 'NO_BUDGET':
-        return 'Задайте лимиты категориям — без плана сравнивать темп не с чем.';
+        return 'Задайте планы категориям — без них сравнивать темп не с чем.';
       case 'NO_SPEND':
         return 'Средний темп нулевой, поэтому срок посчитать нельзя.';
       case 'SHORTFALL':

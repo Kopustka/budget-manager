@@ -13,14 +13,14 @@ interface LimitFieldProps {
   error?: string | null;
 }
 
-/** Типовые месячные бюджеты — чтобы не набирать четыре нуля вручную. */
+/** Типовые месячные планы — чтобы не набирать четыре нуля вручную. */
 const PRESETS = [5_000, 10_000, 30_000];
-const TITLE = 'Бюджет на месяц';
+const TITLE = 'План расходов';
 
 /**
- * Ввод запланированного месячного бюджета категории через встроенную клавиатуру.
+ * Ввод плана расходов категории на месяц через встроенную клавиатуру.
  *
- * Пустое поле — осознанное «без лимита», а не ошибка: планировать все категории
+ * Пустое поле — осознанное «без плана», а не ошибка: планировать все категории
  * сразу никто не станет, и требовать сумму значило бы получить выдуманные числа.
  * Очистка клавиатуры (C или стирание) как раз и возвращает поле в это состояние.
  */
@@ -40,11 +40,11 @@ export function LimitField({ value, onChange, error }: LimitFieldProps) {
   );
 
   const parsed = parseAmount(value);
-  const display = parsed !== null ? formatMoney(parsed, currency) : 'без лимита';
+  const display = parsed !== null ? formatMoney(parsed, currency) : 'без плана';
 
   return (
     <div>
-      <span className="block pb-1 text-sm text-ink-muted">Запланированный бюджет на месяц</span>
+      <span className="block pb-1 text-sm text-ink-muted">План расходов на месяц</span>
       <button
         type="button"
         id={id}
@@ -72,8 +72,8 @@ export function LimitField({ value, onChange, error }: LimitFieldProps) {
         </p>
       ) : (
         <p id={`${id}-hint`} className="pt-2 text-xs text-ink-faint">
-          Карточка категории покажет прогресс и предупредит, когда бюджет подойдёт к концу.
-          Оставьте пустым — категория будет без лимита.
+          Карточка категории покажет прогресс и предупредит, когда план будет на исходе.
+          Оставьте пустым — категория будет без плана.
         </p>
       )}
 
