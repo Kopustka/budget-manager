@@ -186,11 +186,21 @@
    схлопываются глобальным правилом — переход становится мгновенным. */
 .screen-layer {
   --screen-shift: 28px;
-  will-change: transform, opacity;
 }
 
+/* fill-mode: backwards, а не both. «both» удержал бы последний кадр
+   (translateX(0)) навсегда, а любой ненулевой computed-transform делает слой
+   containing block для position:fixed-потомков. Тогда DragOverlay матрицы и
+   нижние шторки (BottomSheet — fixed inset-0) начинают позиционироваться
+   относительно высокого прокручиваемого слоя, а не вьюпорта: «летящая» карточка
+   уезжает вверх и скроллится со страницей, а кнопка «Настроить» в футере шторки
+   оказывается за нижней кромкой экрана. С «backwards» трансформ снимается по
+   завершении анимации, слой снова прозрачен для fixed-потомков.
+   will-change здесь тоже нельзя: will-change:transform сам по себе создаёт такой
+   containing block, поэтому его держим только на уходящем слое, который живёт
+   один кадр анимации и снимается по её концу. */
 .screen-layer--enter {
-  animation: screen-enter var(--duration-page) var(--ease-ios) both;
+  animation: screen-enter var(--duration-page) var(--ease-ios) backwards;
 }
 
 .screen-layer--leave {
@@ -199,6 +209,7 @@
   top: 0;
   /* Уходящий слой не перехватывает касания, пока доигрывает выезд. */
   pointer-events: none;
+  will-change: transform, opacity;
   animation: screen-leave var(--duration-page) var(--ease-ios) both;
 }
 
