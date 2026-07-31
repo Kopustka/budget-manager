@@ -12,6 +12,7 @@ import { DndMatrixProvider } from '@/features/dnd-matrix/DndMatrixProvider';
 import { Numpad } from '@/features/tx-editor/Numpad';
 import { haptics } from '@/shared/lib/telegram';
 import { cn } from '@/shared/ui/cn';
+import { ScreenSwitcher } from './ScreenSwitcher';
 
 const TABS: Array<{ id: Tab; label: string; icon: typeof LayoutGrid }> = [
   { id: 'home', label: 'Главная', icon: LayoutGrid },
@@ -19,6 +20,26 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof LayoutGrid }> = [
   { id: 'analytics', label: 'Аналитика', icon: PieChart },
   { id: 'settings', label: 'Настройки', icon: Settings },
 ];
+
+/** Порядок вкладок = порядок панели снизу: из него берётся сторона выезда. */
+const TAB_ORDER = TABS.map((t) => t.id);
+
+function renderScreen(tab: Tab) {
+  switch (tab) {
+    case 'home':
+      return (
+        <DndMatrixProvider>
+          <HomeScreen />
+        </DndMatrixProvider>
+      );
+    case 'history':
+      return <HistoryScreen />;
+    case 'analytics':
+      return <AnalyticsScreen />;
+    case 'settings':
+      return <SettingsScreen />;
+  }
+}
 
 export function App() {
   const load = useBudgetStore((s) => s.load);
@@ -37,18 +58,10 @@ export function App() {
     <div className="min-h-full text-ink">
       <Toaster />
 
-      {/* Отступ снизу — под фиксированную панель, иначе она закрывает конец списка.
-          key={tab} + анимация page-in дают мягкий переход при смене вкладки. */}
-      <div key={tab} className="animate-[page-in_var(--duration-base)_var(--ease-ios)] pb-24">
-        {tab === 'home' && (
-          <DndMatrixProvider>
-            <HomeScreen />
-          </DndMatrixProvider>
-        )}
-        {tab === 'history' && <HistoryScreen />}
-        {tab === 'analytics' && <AnalyticsScreen />}
-        {tab === 'settings' && <SettingsScreen />}
-      </div>
+      {/* Переход между вкладками — «листание окон» с направлением по порядку
+          панели снизу. Отступ снизу под фиксированную панель — на слое экрана
+          внутри ScreenSwitcher (pb-24), иначе она закрывает конец списка. */}
+      <ScreenSwitcher activeKey={tab} order={TAB_ORDER} render={renderScreen} />
 
       <nav
         aria-label="Основная навигация"

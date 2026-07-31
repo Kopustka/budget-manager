@@ -56,6 +56,9 @@
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
   --duration-fast: 160ms;
   --duration-base: 240ms;
+  /* Переход между вкладками — чуть длиннее базового, чтобы горизонтальный
+     сдвиг успел прочитаться как «листание окон», а не мелькание. */
+  --duration-page: 300ms;
 }
 
 @layer base {
@@ -174,15 +177,49 @@
   }
 }
 
-/* Переход между вкладками: новая страница мягко проявляется и чуть подъезжает,
-   вместо жёсткой мгновенной подмены. */
-@keyframes page-in {
+/* ── Переход между вкладками (главная · история · аналитика · настройки) ──────
+   «Листание окон»: входящий экран подъезжает с той стороны, куда движемся по
+   порядку вкладок, уходящий уезжает в противоположную и гаснет. Направление
+   задаётся переменной --screen-dir (+1 вперёд, −1 назад) из ScreenSwitcher.
+   Уходящий экран лежит абсолютным слоем поверх потока, поэтому подмена не
+   мигает и не прыгает по высоте. В prefers-reduced-motion оба кадра
+   схлопываются глобальным правилом — переход становится мгновенным. */
+.screen-layer {
+  --screen-shift: 28px;
+  will-change: transform, opacity;
+}
+
+.screen-layer--enter {
+  animation: screen-enter var(--duration-page) var(--ease-ios) both;
+}
+
+.screen-layer--leave {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  /* Уходящий слой не перехватывает касания, пока доигрывает выезд. */
+  pointer-events: none;
+  animation: screen-leave var(--duration-page) var(--ease-ios) both;
+}
+
+@keyframes screen-enter {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateX(calc(var(--screen-dir, 1) * var(--screen-shift)));
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(0);
+  }
+}
+
+@keyframes screen-leave {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(calc(var(--screen-dir, 1) * var(--screen-shift) * -1));
   }
 }
