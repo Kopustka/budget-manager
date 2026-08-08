@@ -245,7 +245,7 @@ export const alertsService = {
     const period = periodOf(day, monthStartDay);
     const { start, end } = periodRange(period, monthStartDay);
 
-    const [todayRow, budgetRow, spentRow, overRow] = await Promise.all([
+    const [todayRow, budgetRow, spentRow, overRow, spendsRows, walletsRow] = await Promise.all([
       pool.query<{ total: string | null }>(
         `SELECT COALESCE(SUM(amount), 0) AS total FROM transactions
           WHERE profile_id = $1 AND type = 'spend'
@@ -278,6 +278,26 @@ export const alertsService = {
             )`,
         [alert.profileId, period, start, end],
       ),
+      // Каждая трата дня для перечисления в отчёте: категория, сумма, «на что».
+      pool.query<{
+        category: string | null;
+        subcategory: string | null;
+        amount: string;
+        comment: string | null;
+      }>(
+        `SELECT c.name AS category, t.subcategory, t.amount, t.comment
+           FROM transactions t
+           LEFT JOIN categories c ON c.id = t.category_id
+          WHERE t.profile_id = $1 AND t.type = 'spend'
+            AND t.occurred_at >= $2::date AND t.occurred_at < ($2::date + interval '1 day')
+          ORDER BY t.occurred_at`,
+        [alert.profileId, alert.day],
+      ),
+      // Реальные деньги на кошельках — не путать с остатком бюджета по лимитам.
+      pool.query<{ total: string | null }>(
+        'SELECT COALESCE(SUM(balance), 0) AS total FROM wallets WHERE profile_id = $1',
+        [alert.profileId],
+      ),
     ]);
 
     const spentToday = Number(todayRow.rows[0]?.total ?? 0);
@@ -294,6 +314,13 @@ export const alertsService = {
     return {
       ...alert,
       spentToday,
+      spends: spendsRows.rows.map((r) => ({
+        category: r.category,
+        subcategory: r.subcategory,
+        amount: Number(r.amount),
+        comment: r.comment,
+      })),
+      walletsTotal: Number(walletsRow.rows[0]?.total ?? 0),
       budget,
       remaining: budget === null ? null : budget - spentPeriod,
       overLimit: Number(overRow.rows[0]?.n ?? 0) > 0,

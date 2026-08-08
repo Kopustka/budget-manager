@@ -37,6 +37,15 @@ export interface FastPaceAlert extends AlertBase {
   dailyBudget: number;
 }
 
+/** Одна трата дня в вечернем отчёте. */
+export interface DigestSpend {
+  /** Название категории; null — категория удалена или не указана. */
+  category: string | null;
+  subcategory: string | null;
+  amount: number;
+  comment: string | null;
+}
+
 /**
  * Вечерний отчёт «День в цифрах».
  *
@@ -50,6 +59,10 @@ export interface DailyDigestAlert extends AlertBase {
   day: string;
   /** Потрачено за день. Заполняется при доставке. */
   spentToday?: number;
+  /** Все траты дня по порядку — «категория — сумма — на что». */
+  spends?: DigestSpend[];
+  /** Суммарный остаток на кошельках профиля в момент отправки. */
+  walletsTotal?: number;
   /** Сумма лимитов периода; null — лимиты не заданы. */
   budget?: number | null;
   /** Остаток бюджета на месяц; null без лимитов. Отрицательный — перерасход. */
