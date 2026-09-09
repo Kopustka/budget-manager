@@ -41,17 +41,46 @@ interface BudgetState {
   applyDndResult: (result: DndPatch) => void;
   applyEditResult: (result: DndPatch) => void;
   /** Удаление: транзакция уходит из ленты, баланс приходит из ответа,
-   *  а spent категории пересчитывает бэкенд — поэтому дотягиваем справочники. */
-  applyRemoval: (transactionId: string, walletBalance: number) => Promise<void>;
+   *  а spent категории пересчитывает бэкенд — поэтому дотягиваем справочники.
+   *  toWalletBalance приходит только у переводов — там балансов два. */
+  applyRemoval: (
+    transactionId: string,
+    walletBalance: number,
+    toWalletBalance?: number | null,
+  ) => Promise<void>;
 }
 
 /** Общая форма ответа DnD-ядра — им же отвечает и правка транзакции. */
 interface DndPatch {
   transaction: Transaction;
   walletBalance: number;
+  /** Баланс кошелька-получателя; null у всего, кроме переводов. */
+  toWalletBalance: number | null;
   categorySpent: number;
   categoryLimit: number | null;
   isOverdraft: boolean;
+}
+
+/**
+ * Проставить новые балансы кошелькам, задетым операцией.
+ *
+ * Перевод трогает сразу два кошелька, поэтому одной подстановкой по walletId
+ * не обойтись: без второй половины кошелёк-получатель показывал бы старую
+ * сумму до ближайшей перезагрузки.
+ */
+function patchBalances(
+  wallets: Wallet[],
+  tx: Transaction,
+  walletBalance: number,
+  toWalletBalance: number | null,
+): Wallet[] {
+  return wallets.map((w) => {
+    if (w.id === tx.walletId) return { ...w, balance: walletBalance };
+    if (toWalletBalance !== null && w.id === tx.toWalletId) {
+      return { ...w, balance: toWalletBalance };
+    }
+    return w;
+  });
 }
 
 export const useBudgetStore = create<BudgetState>((set) => ({
@@ -137,11 +166,9 @@ export const useBudgetStore = create<BudgetState>((set) => ({
     }));
   },
 
-  applyDndResult({ transaction, walletBalance, categorySpent, categoryLimit, isOverdraft }) {
+  applyDndResult({ transaction, walletBalance, toWalletBalance, categorySpent, categoryLimit, isOverdraft }) {
     set((state) => ({
-      wallets: state.wallets.map((w) =>
-        w.id === transaction.walletId ? { ...w, balance: walletBalance } : w,
-      ),
+      wallets: patchBalances(state.wallets, transaction, walletBalance, toWalletBalance),
       categories: state.categories.map((c) =>
         c.id === transaction.categoryId && c.kind === 'expense'
           ? { ...c, spent: categorySpent, limit: categoryLimit, isOverdraft }
@@ -151,11 +178,9 @@ export const useBudgetStore = create<BudgetState>((set) => ({
     }));
   },
 
-  applyEditResult({ transaction, walletBalance, categorySpent, categoryLimit, isOverdraft }) {
+  applyEditResult({ transaction, walletBalance, toWalletBalance, categorySpent, categoryLimit, isOverdraft }) {
     set((state) => ({
-      wallets: state.wallets.map((w) =>
-        w.id === transaction.walletId ? { ...w, balance: walletBalance } : w,
-      ),
+      wallets: patchBalances(state.wallets, transaction, walletBalance, toWalletBalance),
       categories: state.categories.map((c) =>
         c.id === transaction.categoryId && c.kind === 'expense'
           ? { ...c, spent: categorySpent, limit: categoryLimit, isOverdraft }
@@ -166,13 +191,13 @@ export const useBudgetStore = create<BudgetState>((set) => ({
     }));
   },
 
-  async applyRemoval(transactionId, walletBalance) {
+  async applyRemoval(transactionId, walletBalance, toWalletBalance = null) {
     const removed = useBudgetStore.getState().transactions.find((t) => t.id === transactionId);
     set((state) => ({
       transactions: state.transactions.filter((t) => t.id !== transactionId),
-      wallets: state.wallets.map((w) =>
-        removed && w.id === removed.walletId ? { ...w, balance: walletBalance } : w,
-      ),
+      wallets: removed
+        ? patchBalances(state.wallets, removed, walletBalance, toWalletBalance)
+        : state.wallets,
     }));
     // Точный spent знает только бэкенд — обновляем категории отдельным запросом.
     try {

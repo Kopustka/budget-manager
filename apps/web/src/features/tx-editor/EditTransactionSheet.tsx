@@ -10,6 +10,7 @@ import { useBudgetStore } from '@/stores/useBudgetStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { haptics } from '@/shared/lib/telegram';
 import { formatRelativeDay, formatTime, toMajor } from '@/shared/lib/format';
+import { transferLabel } from '@/shared/lib/transfer';
 import { AmountField, parseAmount } from './AmountField';
 import { cn } from '@/shared/ui/cn';
 
@@ -20,7 +21,7 @@ interface EditTransactionSheetProps {
 
 /** Правка операции: сумма, подкатегория, комментарий, перепривязка категории, удаление. */
 export function EditTransactionSheet({ transaction, onClose }: EditTransactionSheetProps) {
-  const { categories, applyEditResult, applyRemoval } = useBudgetStore();
+  const { categories, wallets, applyEditResult, applyRemoval } = useBudgetStore();
   const notify = useUiStore((s) => s.notify);
 
   const [amount, setAmount] = useState('');
@@ -45,6 +46,7 @@ export function EditTransactionSheet({ transaction, onClose }: EditTransactionSh
   if (!transaction) return null;
 
   const isDeposit = transaction.type === 'deposit';
+  const isTransfer = transaction.type === 'transfer';
   // Перепривязывать можно только в пределах своего типа: расход к расходу, доход к доходу.
   const options = categories.filter((c) => c.kind === (isDeposit ? 'income' : 'expense'));
 
@@ -62,9 +64,10 @@ export function EditTransactionSheet({ transaction, onClose }: EditTransactionSh
     try {
       const result = await transactionApi.edit(transaction.id, {
         amount: minor,
-        subcategory: subcategory.trim() || null,
+        // У перевода нет ни категории, ни подкатегории — бэкенд их и не примет.
+        subcategory: isTransfer ? null : subcategory.trim() || null,
         comment: comment.trim() || null,
-        categoryId: categoryId ?? undefined,
+        categoryId: isTransfer ? undefined : categoryId ?? undefined,
       });
       applyEditResult(result);
       if (result.isOverdraft) {
@@ -94,10 +97,10 @@ export function EditTransactionSheet({ transaction, onClose }: EditTransactionSh
 
     setBusy(true);
     try {
-      const { walletBalance } = await transactionApi.remove(transaction.id);
-      await applyRemoval(transaction.id, walletBalance);
+      const { walletBalance, toWalletBalance } = await transactionApi.remove(transaction.id);
+      await applyRemoval(transaction.id, walletBalance, toWalletBalance);
       haptics.success();
-      notify('Операция удалена', 'success');
+      notify(isTransfer ? 'Перевод отменён' : 'Операция удалена', 'success');
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Не удалось удалить операцию');
@@ -110,7 +113,7 @@ export function EditTransactionSheet({ transaction, onClose }: EditTransactionSh
   return (
     <BottomSheet
       open
-      title={isDeposit ? 'Правка зачисления' : 'Правка списания'}
+      title={isTransfer ? 'Правка перевода' : isDeposit ? 'Правка зачисления' : 'Правка списания'}
       onClose={onClose}
       footer={
         <div className="flex gap-2">
@@ -131,10 +134,14 @@ export function EditTransactionSheet({ transaction, onClose }: EditTransactionSh
     >
       <p className="pb-3 text-xs text-ink-faint">
         {formatRelativeDay(transaction.occurredAt)}, {formatTime(transaction.occurredAt)}
+        {/* Маршрут перевода заменяет категорию: без него из шторки не понять,
+            между какими кошельками правится сумма. */}
+        {isTransfer ? ` · ${transferLabel(transaction, wallets)}` : ''}
       </p>
 
       <AmountField value={amount} onChange={setAmount} error={error} />
 
+      {!isTransfer && (
       <div className="pt-4">
         <p className="pb-2 text-sm text-ink-muted">Категория</p>
         <div className="flex flex-wrap gap-2">
@@ -166,9 +173,10 @@ export function EditTransactionSheet({ transaction, onClose }: EditTransactionSh
           })}
         </div>
       </div>
+      )}
 
       <div className="flex flex-col gap-3 py-4">
-        {!isDeposit && (
+        {!isDeposit && !isTransfer && (
           <label className="block text-sm">
             <span className="block pb-1 text-ink-muted">Подкатегория</span>
             <input

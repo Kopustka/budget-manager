@@ -67,13 +67,20 @@ export interface CategoryLimit {
   limitAmount: MinorAmount;
 }
 
-export type TransactionType = 'deposit' | 'spend';
+export type TransactionType = 'deposit' | 'spend' | 'transfer';
 
 export interface Transaction {
   id: UUID;
   profileId: UUID;
   type: TransactionType;
+  /** Для перевода — кошелёк-источник, откуда ушли деньги. */
   walletId: UUID | null;
+  /**
+   * Кошелёк-получатель перевода. У зачислений и списаний всегда null.
+   * Обнуляется вместе с удалением кошелька — история перевода остаётся.
+   */
+  toWalletId: UUID | null;
+  /** У перевода категории нет: деньги не покидают бюджет. */
   categoryId: UUID | null;
   subcategory: string | null;
   amount: MinorAmount;

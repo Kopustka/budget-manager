@@ -33,8 +33,15 @@ interface ExportRow {
   comment: string | null;
   occurred_at: Date;
   wallet_name: string | null;
+  to_wallet_name: string | null;
   category_name: string | null;
 }
+
+const TYPE_LABEL: Record<Transaction['type'], string> = {
+  deposit: 'Доход',
+  spend: 'Расход',
+  transfer: 'Перевод',
+};
 
 /** Экранирование по RFC 4180: кавычки удваиваются, поле берётся в кавычки. */
 function csvCell(value: string | null | undefined): string {
@@ -56,9 +63,10 @@ export const exportService = {
   /** Собрать CSV за диапазон (обе границы необязательны). */
   async build(profile: ProfileScope, from?: string, to?: string): Promise<ExportResult> {
     const { rows } = await pool.query<ExportRow>(
-      `SELECT t.*, w.name AS wallet_name, c.name AS category_name
+      `SELECT t.*, w.name AS wallet_name, tw.name AS to_wallet_name, c.name AS category_name
          FROM transactions t
          LEFT JOIN wallets w ON w.id = t.wallet_id
+         LEFT JOIN wallets tw ON tw.id = t.to_wallet_id
          LEFT JOIN categories c ON c.id = t.category_id
         WHERE t.profile_id = $1
           AND ($2::timestamptz IS NULL OR t.occurred_at >= $2)
@@ -74,11 +82,18 @@ export const exportService = {
         [
           csvCell(occurred.toISOString().slice(0, 10)),
           csvCell(occurred.toISOString().slice(11, 16)),
-          csvCell(row.type === 'deposit' ? 'Доход' : 'Расход'),
+          csvCell(TYPE_LABEL[row.type]),
           csvAmount(Number(row.amount)),
           csvCell(profile.currency),
           csvCell(row.wallet_name),
-          csvCell(row.category_name),
+          // У перевода категории нет, поэтому в её колонку кладём получателя со
+          // стрелкой: в таблице строка читается как «Карта → Наличные», а не
+          // обрывается на источнике.
+          csvCell(
+            row.type === 'transfer'
+              ? `→ ${row.to_wallet_name ?? 'удалённый кошелёк'}`
+              : row.category_name,
+          ),
           csvCell(row.subcategory),
           csvCell(row.comment),
         ].join(SEP),

@@ -24,8 +24,12 @@ export function parseNodeId(value: string): { kind: NodeKind; id: string } | nul
 /** Операция, для которой открыта шторка ввода суммы. */
 export interface PendingOperation {
   action: DndAction;
+  /** Для перевода — кошелёк-источник. */
   walletId: string;
-  categoryId: string;
+  /** Только у перевода: куда уходят деньги. */
+  toWalletId?: string;
+  /** У перевода категории нет. */
+  categoryId?: string;
   /** Дата события — берётся из карусели времени (может быть задним числом). */
   occurredAt: string;
 }

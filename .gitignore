@@ -24,3 +24,4 @@ logs/
 # vite / cache
 .vite/
 coverage/
+.claude/

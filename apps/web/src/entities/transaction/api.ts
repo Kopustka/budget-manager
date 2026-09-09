@@ -38,5 +38,7 @@ export const transactionApi = {
   edit: (id: string, input: EditTransactionInput) =>
     api.patch<DndResponse>(`/transactions/${id}`, input),
 
-  remove: (id: string) => api.delete<{ walletBalance: number }>(`/transactions/${id}`),
+  /** toWalletBalance приходит только при отмене перевода — там балансов два. */
+  remove: (id: string) =>
+    api.delete<{ walletBalance: number; toWalletBalance: number | null }>(`/transactions/${id}`),
 };

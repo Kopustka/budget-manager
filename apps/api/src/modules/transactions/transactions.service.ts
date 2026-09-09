@@ -5,6 +5,7 @@ import {
   type DndResult,
   type EditTransactionInput,
   type Transaction,
+  type Wallet,
 } from '@budget/shared';
 import type { ProfileScope } from '../../modules/profiles/profiles.repository.js';
 import { pool, withTransaction, type PoolClient } from '../../config/db.js';
@@ -45,6 +46,35 @@ async function flushCache(ops: CacheOps, resync: () => Promise<void>): Promise<v
   } catch {
     await resync().catch(() => undefined);
   }
+}
+
+/**
+ * Заблокировать два кошелька в одной транзакции.
+ *
+ * Порядок блокировки — по возрастанию id, а не по смыслу «сначала источник».
+ * Два встречных перевода (A→B и B→A) в один момент брали бы строки в обратном
+ * порядке и вставали бы в дедлок; общий порядок исключает это по построению.
+ */
+async function lockWalletPair(
+  db: PoolClient,
+  profileId: string,
+  fromId: string,
+  toId: string,
+): Promise<{ from: Wallet; to: Wallet }> {
+  const [firstId, secondId] = fromId < toId ? [fromId, toId] : [toId, fromId];
+  const first = await walletsRepository.findOwned(db, profileId, firstId, true);
+  const second = await walletsRepository.findOwned(db, profileId, secondId, true);
+  return firstId === fromId ? { from: first, to: second } : { from: second, to: first };
+}
+
+/** Пересобрать кэш балансов пары кошельков из PostgreSQL. */
+async function resyncWallets(profileId: string, ...walletIds: string[]): Promise<void> {
+  const pipe = redis.pipeline();
+  for (const id of walletIds) {
+    const wallet = await walletsRepository.findOwned(pool, profileId, id);
+    cache.setWalletBalance(profileId, id, wallet.balance, pipe);
+  }
+  await pipe.exec();
 }
 
 /** Пересобрать кэш кошелька и spent категории из PostgreSQL. */
@@ -101,9 +131,18 @@ export const transactionsService = {
     const period = periodOf(occurredAt, profile.monthStartDay);
     const action = matrix.action;
 
+    if (action === 'transfer') {
+      return this.processTransfer(profile, input, occurredAt);
+    }
+
+    // Схема запроса уже потребовала категорию для зачисления и списания;
+    // проверка здесь — страховка на случай вызова в обход валидации.
+    if (!input.categoryId) throw new ValidationError('Не указана категория');
+    const categoryId = input.categoryId;
+
     const { outcome, ops, categoryName } = await withTransaction(async (client) => {
       const wallet = await walletsRepository.findOwned(client, profile.id, input.walletId, true);
-      const category = await categoriesRepository.findOwned(client, profile.id, input.categoryId);
+      const category = await categoriesRepository.findOwned(client, profile.id, categoryId);
 
       const expectedKind = action === 'deposit' ? 'income' : 'expense';
       if (category.kind !== expectedKind) {
@@ -153,6 +192,7 @@ export const transactionsService = {
           transactionId: tx.id,
           transaction: tx,
           walletBalance: balance,
+          toWalletBalance: null,
           categorySpent: spent,
           categoryLimit: limit,
           isOverdraft: limit !== null && spent > limit,
@@ -168,7 +208,7 @@ export const transactionsService = {
     });
 
     await flushCache(ops, () =>
-      resyncFromDb(profile.id, input.walletId, input.categoryId, period, profile.monthStartDay),
+      resyncFromDb(profile.id, input.walletId, categoryId, period, profile.monthStartDay),
     );
 
     if (action === 'spend') {
@@ -178,7 +218,7 @@ export const transactionsService = {
       await alertsService
         .settleSpend({
           profile,
-          categoryId: input.categoryId,
+          categoryId,
           categoryName,
           spent: outcome.categorySpent,
           limit: outcome.categoryLimit,
@@ -188,7 +228,7 @@ export const transactionsService = {
           resyncFromDb(
             profile.id,
             input.walletId,
-            input.categoryId,
+            categoryId,
             period,
             profile.monthStartDay,
           ).catch(() => undefined),
@@ -203,10 +243,83 @@ export const transactionsService = {
   },
 
   /**
+   * Перевод между своими кошельками: деньги уходят из одного и приходят в другой
+   * одной строкой истории.
+   *
+   * Ни лимитов, ни уведомлений здесь нет намеренно: перевод не трата. Сумма
+   * бюджета не изменилась, категории у операции нет, и дёргать проверку плана
+   * (а тем более слать пуш «план превышен») было бы ложной тревогой.
+   */
+  async processTransfer(
+    profile: ProfileScope,
+    input: DndEventInput,
+    occurredAt: Date,
+  ): Promise<DndOutcome> {
+    // Схема уже проверила оба условия; дублируем на случай вызова в обход zod.
+    if (!input.toWalletId) throw new ValidationError('Не указан кошелёк-получатель');
+    const toWalletId = input.toWalletId;
+    if (toWalletId === input.walletId) {
+      throw new ValidationError('Перевод в тот же кошелёк невозможен');
+    }
+
+    const { outcome, ops } = await withTransaction(async (client) => {
+      const { from, to } = await lockWalletPair(client, profile.id, input.walletId, toWalletId);
+
+      if (from.balance - input.amount < 0) {
+        throw new ConflictError('Недостаточно средств в кошельке');
+      }
+
+      const fromBalance = await walletsRepository.applyDelta(client, from.id, -input.amount);
+      const toBalance = await walletsRepository.applyDelta(client, to.id, input.amount);
+
+      const tx = await transactionsRepository.insert(client, {
+        profileId: profile.id,
+        type: 'transfer',
+        walletId: from.id,
+        toWalletId: to.id,
+        categoryId: null,
+        amount: input.amount,
+        // Подкатегория — атрибут траты; у перевода осмысленного значения нет.
+        subcategory: null,
+        comment: input.comment ?? null,
+        occurredAt,
+      });
+
+      const occurredUnix = Math.floor(occurredAt.getTime() / 1000);
+      const nowUnix = Math.floor(Date.now() / 1000);
+
+      return {
+        outcome: {
+          transactionId: tx.id,
+          transaction: tx,
+          walletBalance: fromBalance,
+          toWalletBalance: toBalance,
+          categorySpent: 0,
+          categoryLimit: null,
+          isOverdraft: false,
+        } satisfies DndOutcome,
+        ops: ((pipe) => {
+          cache.setWalletBalance(profile.id, from.id, fromBalance, pipe);
+          cache.setWalletBalance(profile.id, to.id, toBalance, pipe);
+          cache.addTxToCache(profile.id, tx.id, occurredUnix, pipe);
+          cache.trimTxCache(profile.id, nowUnix, pipe);
+        }) satisfies CacheOps,
+      };
+    });
+
+    await flushCache(ops, () => resyncWallets(profile.id, input.walletId, toWalletId));
+    return outcome;
+  },
+
+  /**
    * Правка транзакции: сумма, подкатегория, комментарий, перепривязка категории.
    * Балансы и spent корректируются дельтами внутри той же PG-транзакции.
    */
   async edit(profile: ProfileScope, txId: string, input: EditTransactionInput): Promise<DndOutcome> {
+    // Тип операции неизменен, поэтому ветку выбираем до транзакции — гонки тут нет.
+    const existing = await transactionsRepository.findOwned(pool, profile.id, txId);
+    if (existing.type === 'transfer') return this.editTransfer(profile, existing, input);
+
     const { outcome, ops, period, walletId, categoryIds } = await withTransaction(
       async (client) => {
         const old = await transactionsRepository.findOwned(client, profile.id, txId, true);
@@ -266,6 +379,7 @@ export const transactionsService = {
             transactionId: tx.id,
             transaction: tx,
             walletBalance: balance,
+            toWalletBalance: null,
             categorySpent: spent,
             categoryLimit: limit,
             isOverdraft: limit !== null && spent > limit,
@@ -286,8 +400,73 @@ export const transactionsService = {
     return outcome;
   },
 
+  /**
+   * Правка перевода: сумма и комментарий. Категорию и подкатегорию менять нечему,
+   * поэтому из EditTransactionInput здесь используется не всё.
+   */
+  async editTransfer(
+    profile: ProfileScope,
+    old: Transaction,
+    input: EditTransactionInput,
+  ): Promise<DndOutcome> {
+    // Осиротевший перевод (кошелёк удалён) чинить нечем: денег удалённого
+    // кошелька уже нет, и правка одной половины разъехалась бы с фактом.
+    if (!old.walletId || !old.toWalletId) {
+      throw new ValidationError('Перевод с удалённым кошельком не редактируется');
+    }
+    const fromId = old.walletId;
+    const toId = old.toWalletId;
+
+    const { outcome, ops } = await withTransaction(async (client) => {
+      const { from, to } = await lockWalletPair(client, profile.id, fromId, toId);
+      const newAmount = input.amount ?? old.amount;
+      const diff = newAmount - old.amount;
+
+      if (from.balance - diff < 0) {
+        throw new ConflictError('Правка уводит баланс кошелька в минус');
+      }
+      if (to.balance + diff < 0) {
+        throw new ConflictError('Правка уводит баланс кошелька-получателя в минус');
+      }
+
+      const fromBalance = await walletsRepository.applyDelta(client, from.id, -diff);
+      const toBalance = await walletsRepository.applyDelta(client, to.id, diff);
+      const tx = await transactionsRepository.update(client, old.id, {
+        amount: newAmount,
+        categoryId: null,
+        subcategory: null,
+        comment: input.comment === undefined ? old.comment : input.comment ?? null,
+      });
+
+      return {
+        outcome: {
+          transactionId: tx.id,
+          transaction: tx,
+          walletBalance: fromBalance,
+          toWalletBalance: toBalance,
+          categorySpent: 0,
+          categoryLimit: null,
+          isOverdraft: false,
+        } satisfies DndOutcome,
+        ops: ((pipe) => {
+          cache.setWalletBalance(profile.id, from.id, fromBalance, pipe);
+          cache.setWalletBalance(profile.id, to.id, toBalance, pipe);
+        }) satisfies CacheOps,
+      };
+    });
+
+    await flushCache(ops, () => resyncWallets(profile.id, fromId, toId));
+    return outcome;
+  },
+
   /** Удаление транзакции с возвратом денег в кошелёк и пересчётом spent. */
-  async remove(profile: ProfileScope, txId: string): Promise<{ walletBalance: number }> {
+  async remove(
+    profile: ProfileScope,
+    txId: string,
+  ): Promise<{ walletBalance: number; toWalletBalance: number | null }> {
+    const existing = await transactionsRepository.findOwned(pool, profile.id, txId);
+    if (existing.type === 'transfer') return this.removeTransfer(profile, existing);
+
     const { balance, ops, period, walletId, categoryId } = await withTransaction(
       async (client) => {
         const old = await transactionsRepository.findOwned(client, profile.id, txId, true);
@@ -334,6 +513,45 @@ export const transactionsService = {
     await flushCache(ops, async () => {
       if (categoryId) await resyncFromDb(profile.id, walletId, categoryId, period, profile.monthStartDay);
     });
-    return { walletBalance: balance };
+    return { walletBalance: balance, toWalletBalance: null };
+  },
+
+  /** Отмена перевода: деньги возвращаются в кошелёк-источник целиком. */
+  async removeTransfer(
+    profile: ProfileScope,
+    old: Transaction,
+  ): Promise<{ walletBalance: number; toWalletBalance: number | null }> {
+    if (!old.walletId || !old.toWalletId) {
+      throw new ValidationError('Перевод с удалённым кошельком не удаляется');
+    }
+    const fromId = old.walletId;
+    const toId = old.toWalletId;
+
+    const { balance, toBalance, ops } = await withTransaction(async (client) => {
+      const { from, to } = await lockWalletPair(client, profile.id, fromId, toId);
+
+      // Деньги, уже потраченные с кошелька-получателя, вернуть неоткуда:
+      // отмена увела бы его в минус, поэтому останавливаемся честной ошибкой.
+      if (to.balance - old.amount < 0) {
+        throw new ConflictError('Удаление уводит баланс кошелька-получателя в минус');
+      }
+
+      const newFrom = await walletsRepository.applyDelta(client, from.id, old.amount);
+      const newTo = await walletsRepository.applyDelta(client, to.id, -old.amount);
+      await transactionsRepository.remove(client, old.id);
+
+      return {
+        balance: newFrom,
+        toBalance: newTo,
+        ops: ((pipe) => {
+          cache.setWalletBalance(profile.id, from.id, newFrom, pipe);
+          cache.setWalletBalance(profile.id, to.id, newTo, pipe);
+          cache.removeTxFromCache(profile.id, old.id, pipe);
+        }) satisfies CacheOps,
+      };
+    });
+
+    await flushCache(ops, () => resyncWallets(profile.id, fromId, toId));
+    return { walletBalance: balance, toWalletBalance: toBalance };
   },
 };

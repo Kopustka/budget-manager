@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
+  ArrowLeftRight,
   ArrowUpRight,
   ChevronRight,
   Plus,
@@ -32,6 +33,7 @@ import { OperationSheet } from '@/features/tx-editor/OperationSheet';
 import { EditTransactionSheet } from '@/features/tx-editor/EditTransactionSheet';
 import { QuickAddSheet } from '@/features/tx-editor/QuickAddSheet';
 import type { CategoryWithStats } from '@/entities/category/api';
+import { transferLabel } from '@/shared/lib/transfer';
 import { cn } from '@/shared/ui/cn';
 
 /** Сколько операций дня показываем на главной, прежде чем увести в «Историю». */
@@ -107,6 +109,9 @@ export function HomeScreen() {
     return transactions.reduce(
       (acc, t) => {
         if (new Date(t.occurredAt) < from) return acc;
+        // Перевод не доход и не расход: деньги остались в бюджете, просто
+        // переехали между кошельками. В итогах периода ему места нет.
+        if (t.type === 'transfer') return acc;
         if (t.type === 'deposit') acc.income += t.amount;
         else acc.expense += t.amount;
         return acc;
@@ -286,11 +291,13 @@ export function HomeScreen() {
           <ul className="flex flex-col gap-2">
             {previewTransactions.map((t) => {
               const isDeposit = t.type === 'deposit';
-              const Icon = isDeposit ? ArrowDownLeft : ArrowUpRight;
+              const isTransfer = t.type === 'transfer';
+              const Icon = isTransfer ? ArrowLeftRight : isDeposit ? ArrowDownLeft : ArrowUpRight;
+              const kindLabel = isTransfer ? 'перевод' : isDeposit ? 'зачисление' : 'списание';
               return (
                 <li key={t.id}>
                   <GlassCard
-                    ariaLabel={`Операция ${isDeposit ? 'зачисление' : 'списание'}, изменить`}
+                    ariaLabel={`Операция ${kindLabel}, изменить`}
                     onClick={() => {
                       haptics.selection();
                       setEditing(t);
@@ -300,20 +307,31 @@ export function HomeScreen() {
                     <span
                       className={cn(
                         'grid h-9 w-9 shrink-0 place-items-center rounded-xl',
-                        isDeposit ? 'bg-success/15 text-success' : 'bg-hairline text-ink-muted',
+                        isDeposit
+                          ? 'bg-success/15 text-success'
+                          : isTransfer
+                            ? 'bg-brand/15 text-brand'
+                            : 'bg-hairline text-ink-muted',
                       )}
                     >
                       <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">
-                        {t.comment ?? t.subcategory ?? (isDeposit ? 'Зачисление' : 'Списание')}
+                        {isTransfer
+                          ? transferLabel(t, wallets)
+                          : t.comment ?? t.subcategory ?? (isDeposit ? 'Зачисление' : 'Списание')}
                       </span>
                       <span className="text-xs text-ink-faint">
                         {formatRelativeDay(t.occurredAt)}, {formatTime(t.occurredAt)}
                       </span>
                     </span>
-                    <Money value={t.amount} tone={isDeposit ? 'positive' : 'negative'} />
+                    {/* Перевод нейтрален: сумма не прибавилась и не убавилась,
+                        красить её в плюс или минус было бы враньём. */}
+                    <Money
+                      value={t.amount}
+                      tone={isTransfer ? 'neutral' : isDeposit ? 'positive' : 'negative'}
+                    />
                   </GlassCard>
                 </li>
               );

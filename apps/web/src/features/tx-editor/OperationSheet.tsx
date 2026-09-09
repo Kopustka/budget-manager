@@ -39,6 +39,8 @@ export function OperationSheet() {
   const wallet = wallets.find((w) => w.id === pending.walletId);
   const category = categories.find((c) => c.id === pending.categoryId);
   const isDeposit = pending.action === 'deposit';
+  const isTransfer = pending.action === 'transfer';
+  const toWallet = wallets.find((w) => w.id === pending.toWalletId);
 
   function close() {
     setAmount('');
@@ -63,11 +65,13 @@ export function OperationSheet() {
     try {
       const result = await transactionApi.dnd({
         source: isDeposit ? 'income' : 'wallet',
-        target: isDeposit ? 'wallet' : 'expense',
+        target: isTransfer ? 'wallet' : isDeposit ? 'wallet' : 'expense',
         walletId: pending.walletId,
+        toWalletId: pending.toWalletId,
         categoryId: pending.categoryId,
         amount: minor,
-        subcategory: subcategory.trim() || null,
+        // Подкатегория относится к трате: у перевода её поля нет.
+        subcategory: isTransfer ? null : subcategory.trim() || null,
         comment: comment.trim() || null,
         // Дату берём из выбранной, а не из зафиксированной при жесте: её могли
         // поменять уже внутри шторки.
@@ -82,7 +86,7 @@ export function OperationSheet() {
         notify(`План по категории «${category?.name ?? ''}» превышен`, 'error');
       } else {
         haptics.success();
-        notify(isDeposit ? 'Зачислено' : 'Списано', 'success');
+        notify(isTransfer ? 'Переведено' : isDeposit ? 'Зачислено' : 'Списано', 'success');
       }
       close();
     } catch (err) {
@@ -98,11 +102,11 @@ export function OperationSheet() {
   return (
     <BottomSheet
       open
-      title={isDeposit ? 'Зачисление' : 'Списание'}
+      title={isTransfer ? 'Перевод' : isDeposit ? 'Зачисление' : 'Списание'}
       onClose={close}
       footer={
         <Button full disabled={saving} onClick={() => void submit()}>
-          {saving ? 'Сохраняем…' : isDeposit ? 'Зачислить' : 'Списать'}
+          {saving ? 'Сохраняем…' : isTransfer ? 'Перевести' : isDeposit ? 'Зачислить' : 'Списать'}
         </Button>
       }
     >
@@ -120,7 +124,9 @@ export function OperationSheet() {
         </span>
         <ArrowRight size={18} strokeWidth={1.75} className="shrink-0 text-ink-faint" aria-label="в" />
         <span className="glass flex min-h-11 flex-1 items-center gap-2 rounded-2xl px-3">
-          {isDeposit ? (
+          {isTransfer ? (
+            <span className="truncate">{toWallet?.name ?? 'Кошелёк'}</span>
+          ) : isDeposit ? (
             <span className="truncate">{wallet?.name ?? 'Кошелёк'}</span>
           ) : (
             <>
@@ -164,7 +170,7 @@ export function OperationSheet() {
       <AmountField value={amount} onChange={setAmount} autoFocus error={error} />
 
       <div className="flex flex-col gap-3 py-4">
-        {!isDeposit && (
+        {!isDeposit && !isTransfer && (
           <label className="block text-sm">
             <span className="block pb-1 text-ink-muted">Подкатегория</span>
             <input

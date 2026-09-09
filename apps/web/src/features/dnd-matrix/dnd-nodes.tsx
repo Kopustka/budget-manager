@@ -59,7 +59,11 @@ export function DropNode({ kind, id, children, className }: DropNodeProps) {
   // Пока идёт жест, сразу видно, какие цели допустимы — это дешевле, чем
   // дать пользователю уронить карточку и получить отказ.
   const isActive = dragging !== null;
-  const isAllowed = isActive ? resolveMatrix(dragging.kind, kind).allowed : false;
+  // Кошелёк сам себе не цель: с приходом переводов матрица разрешает
+  // wallet → wallet, и без этой проверки источник подсвечивался бы как
+  // допустимая цель, обещая операцию, которой не будет.
+  const isSelf = dragging?.kind === kind && dragging.id === id;
+  const isAllowed = isActive && !isSelf ? resolveMatrix(dragging.kind, kind).allowed : false;
 
   return (
     <div

@@ -64,6 +64,20 @@ export function DndMatrixProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (matrix.action === 'transfer') {
+      // Кошелёк, брошенный сам на себя, — промах пальцем, а не операция.
+      // Молча гасим: ругаться на очевидную случайность незачем.
+      if (source.id === target.id) return;
+      haptics.impact('medium');
+      openOperation({
+        action: 'transfer',
+        walletId: source.id,
+        toWalletId: target.id,
+        occurredAt: occurredAtFor(selectedDay),
+      });
+      return;
+    }
+
     // Раскладываем узлы по ролям: кто кошелёк, кто категория.
     const walletId = matrix.action === 'deposit' ? target.id : source.id;
     const categoryId = matrix.action === 'deposit' ? source.id : target.id;
@@ -133,7 +147,7 @@ const announcements = {
 
 const screenReaderInstructions = {
   draggable:
-    'Нажмите пробел или Enter, чтобы взять элемент. Стрелками ведите к цели: доход — в кошелёк, кошелёк — в категорию расхода. Пробел подтверждает, Escape отменяет.',
+    'Нажмите пробел или Enter, чтобы взять элемент. Стрелками ведите к цели: доход — в кошелёк, кошелёк — в категорию расхода, кошелёк — в другой кошелёк для перевода. Пробел подтверждает, Escape отменяет.',
 };
 
 /**

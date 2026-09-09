@@ -11,17 +11,57 @@ export const amountSchema = z
   .positive('Сумма должна быть положительной');
 
 /** POST /api/dnd — обработка события Drag-and-Drop матрицы */
-export const dndEventSchema = z.object({
-  source: z.enum(['income', 'wallet', 'expense']),
-  target: z.enum(['income', 'wallet', 'expense']),
-  walletId: z.string().uuid(),
-  categoryId: z.string().uuid(),
-  amount: amountSchema,
-  subcategory: z.string().max(64).nullish(),
-  comment: z.string().max(280).nullish(),
-  /** ISO-дата события (для добавления задним числом из карусели) */
-  occurredAt: z.string().datetime().optional(),
-});
+export const dndEventSchema = z
+  .object({
+    source: z.enum(['income', 'wallet', 'expense']),
+    target: z.enum(['income', 'wallet', 'expense']),
+    /** Для перевода — кошелёк-источник. */
+    walletId: z.string().uuid(),
+    /** Только для перевода «кошелёк → кошелёк»: куда идут деньги. */
+    toWalletId: z.string().uuid().optional(),
+    /** Обязательна для зачисления и списания; у перевода категории нет. */
+    categoryId: z.string().uuid().optional(),
+    amount: amountSchema,
+    subcategory: z.string().max(64).nullish(),
+    comment: z.string().max(280).nullish(),
+    /** ISO-дата события (для добавления задним числом из карусели) */
+    occurredAt: z.string().datetime().optional(),
+  })
+  // Набор полей зависит от жеста, поэтому форму проверяем здесь, а не в сервисе:
+  // так «перевод без второго кошелька» не доезжает до транзакции БД.
+  .superRefine((v, ctx) => {
+    const isTransfer = v.source === 'wallet' && v.target === 'wallet';
+    if (isTransfer) {
+      if (!v.toWalletId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['toWalletId'],
+          message: 'Для перевода нужен кошелёк-получатель',
+        });
+      } else if (v.toWalletId === v.walletId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['toWalletId'],
+          message: 'Перевод в тот же кошелёк невозможен',
+        });
+      }
+      return;
+    }
+    if (!v.categoryId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['categoryId'],
+        message: 'Не указана категория',
+      });
+    }
+    if (v.toWalletId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['toWalletId'],
+        message: 'Второй кошелёк допустим только при переводе',
+      });
+    }
+  });
 export type DndEventInput = z.infer<typeof dndEventSchema>;
 
 /** PATCH /api/transactions/:id — редактирование транзакции */
@@ -286,7 +326,10 @@ export interface HistoryTotals {
 
 export const dndResultSchema = z.object({
   transactionId: z.string().uuid(),
+  /** Баланс кошелька-источника (для зачисления — он же и получатель). */
   walletBalance: z.number().int(),
+  /** Баланс кошелька-получателя перевода; null для остальных операций. */
+  toWalletBalance: z.number().int().nullable(),
   categorySpent: z.number().int(),
   categoryLimit: z.number().int().nullable(),
   isOverdraft: z.boolean(),

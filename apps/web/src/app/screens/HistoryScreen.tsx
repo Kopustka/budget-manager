@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
+  ArrowLeftRight,
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
@@ -18,8 +19,16 @@ import { Skeleton } from '@/shared/ui/Skeleton';
 import { CategoryIcon } from '@/shared/ui/CategoryIcon';
 import { formatRelativeDay, formatTime } from '@/shared/lib/format';
 import { haptics } from '@/shared/lib/telegram';
+import { transferLabel } from '@/shared/lib/transfer';
 import { EditTransactionSheet } from '@/features/tx-editor/EditTransactionSheet';
 import { cn } from '@/shared/ui/cn';
+
+/** Подпись выбранного фильтра типа — рядом с кнопкой «Фильтры». */
+const TYPE_FILTER_LABELS: Record<TransactionType, string> = {
+  deposit: 'доходы',
+  spend: 'расходы',
+  transfer: 'переводы',
+};
 
 /**
  * Полная история операций: отрезок времени, фильтры и итоги.
@@ -29,7 +38,7 @@ import { cn } from '@/shared/ui/cn';
  * календаря.
  */
 export function HistoryScreen() {
-  const { categories, load } = useBudgetStore();
+  const { categories, wallets, load } = useBudgetStore();
   const { periodStart, periodEnd, monthStartDay } = useSettingsStore();
 
   const historyFilter = useUiStore((s) => s.historyFilter);
@@ -212,7 +221,7 @@ export function HistoryScreen() {
         Фильтры
         {(type !== 'all' || categoryId !== 'all') && (
           <span className="ml-auto text-xs">
-            {[type !== 'all' ? (type === 'deposit' ? 'доходы' : 'расходы') : null,
+            {[type !== 'all' ? TYPE_FILTER_LABELS[type] : null,
               categoryId !== 'all'
                 ? categories.find((c) => c.id === categoryId)?.name
                 : null]
@@ -230,6 +239,7 @@ export function HistoryScreen() {
                 ['all', 'Все'],
                 ['deposit', 'Доходы'],
                 ['spend', 'Расходы'],
+                ['transfer', 'Переводы'],
               ] as const
             ).map(([value, label]) => (
               <button
@@ -310,12 +320,22 @@ export function HistoryScreen() {
               <ul className="flex flex-col gap-2">
                 {dayItems.map((t) => {
                   const isDeposit = t.type === 'deposit';
-                  const Icon = isDeposit ? ArrowDownLeft : ArrowUpRight;
+                  const isTransfer = t.type === 'transfer';
+                  const Icon = isTransfer
+                    ? ArrowLeftRight
+                    : isDeposit
+                      ? ArrowDownLeft
+                      : ArrowUpRight;
                   const category = categories.find((c) => c.id === t.categoryId);
+                  const kindLabel = isTransfer
+                    ? 'перевод'
+                    : isDeposit
+                      ? 'зачисление'
+                      : 'списание';
                   return (
                     <li key={t.id}>
                       <GlassCard
-                        ariaLabel={`Операция ${isDeposit ? 'зачисление' : 'списание'}, изменить`}
+                        ariaLabel={`Операция ${kindLabel}, изменить`}
                         onClick={() => {
                           haptics.selection();
                           setEditing(t);
@@ -325,21 +345,33 @@ export function HistoryScreen() {
                         <span
                           className={cn(
                             'grid h-9 w-9 shrink-0 place-items-center rounded-xl',
-                            isDeposit ? 'bg-success/15 text-success' : 'bg-hairline text-ink-muted',
+                            isDeposit
+                              ? 'bg-success/15 text-success'
+                              : isTransfer
+                                ? 'bg-brand/15 text-brand'
+                                : 'bg-hairline text-ink-muted',
                           )}
                         >
                           <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm">
-                            {t.comment ?? t.subcategory ?? category?.name ?? (isDeposit ? 'Зачисление' : 'Списание')}
+                            {isTransfer
+                              ? transferLabel(t, wallets)
+                              : t.comment ??
+                                t.subcategory ??
+                                category?.name ??
+                                (isDeposit ? 'Зачисление' : 'Списание')}
                           </span>
                           <span className="text-xs text-ink-faint">
                             {formatTime(t.occurredAt)}
-                            {category ? ` · ${category.name}` : ''}
+                            {isTransfer ? ' · перевод' : category ? ` · ${category.name}` : ''}
                           </span>
                         </span>
-                        <Money value={t.amount} tone={isDeposit ? 'positive' : 'negative'} />
+                        <Money
+                          value={t.amount}
+                          tone={isTransfer ? 'neutral' : isDeposit ? 'positive' : 'negative'}
+                        />
                       </GlassCard>
                     </li>
                   );

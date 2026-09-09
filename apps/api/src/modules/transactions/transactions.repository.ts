@@ -9,6 +9,7 @@ interface TxRow {
   profile_id: string;
   type: TransactionType;
   wallet_id: string | null;
+  to_wallet_id: string | null;
   category_id: string | null;
   subcategory: string | null;
   amount: string;
@@ -23,6 +24,7 @@ function toTx(r: TxRow): Transaction {
     profileId: r.profile_id,
     type: r.type,
     walletId: r.wallet_id,
+    toWalletId: r.to_wallet_id,
     categoryId: r.category_id,
     subcategory: r.subcategory,
     amount: Number(r.amount),
@@ -46,7 +48,10 @@ export interface InsertTxInput {
   profileId: string;
   type: TransactionType;
   walletId: string;
-  categoryId: string;
+  /** Только для перевода: кошелёк-получатель. */
+  toWalletId?: string | null;
+  /** У перевода категории нет. */
+  categoryId: string | null;
   amount: number;
   subcategory?: string | null;
   comment?: string | null;
@@ -57,13 +62,14 @@ export const transactionsRepository = {
   async insert(db: Queryable, input: InsertTxInput): Promise<Transaction> {
     const { rows } = await db.query<TxRow>(
       `INSERT INTO transactions
-         (profile_id, type, wallet_id, category_id, subcategory, amount, comment, occurred_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (profile_id, type, wallet_id, to_wallet_id, category_id, subcategory, amount, comment, occurred_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         input.profileId,
         input.type,
         input.walletId,
+        input.toWalletId ?? null,
         input.categoryId,
         input.subcategory ?? null,
         input.amount,
@@ -94,7 +100,8 @@ export const transactionsRepository = {
     id: string,
     fields: {
       amount: number;
-      categoryId: string;
+      /** null — у перевода: категории у него нет. */
+      categoryId: string | null;
       subcategory: string | null;
       comment: string | null;
     },
